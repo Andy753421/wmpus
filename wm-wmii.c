@@ -5,36 +5,46 @@
 
 typedef enum {
 	none, move, resize
-} mode_t;
+} Mode_t;
 
 win_t *kwin;
 ptr_t  kptr;
-mode_t mode;
+Mode_t mode;
 
-void wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
+int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
-	printf("wm_handle_key: %p - %x %x\n", win, key, *(int*)&mod);
+	printf("wm_handle_key: %p - %x\n", win, key);
 	kptr = ptr;
 	kwin = win;
-	if (key == key_f1 && mod.ctrl)
+
+	/* Raise */
+	if ((key == key_f1 && mod.ctrl) ||
+			(key_mouse0 <= key && key <= key_mouse7))
 		sys_raise(win);
-	else if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
-		mode = none;
-	else if (key == key_mouse1)
-		mode = move;
-	else if (key == key_mouse3)
-		mode = resize;
+
+	/* Movement */
+	if (key_mouse0 <= key && key <= key_mouse7 &&
+			mod.up && mode != none)
+		return mode = none, 1;
+	else if (key == key_mouse1 && mod.ctrl)
+		return mode = move, 1;
+	else if (key == key_mouse3 && mod.ctrl)
+		return mode = resize, 1;
+
+	return 0;
 }
 
-void wm_handle_ptr(win_t *win, ptr_t ptr)
+int wm_handle_ptr(win_t *win, ptr_t ptr)
 {
-	printf("wm_handle_ptr: %p - %d,%d (%d)\n", win, ptr.x, ptr.y, mode);
+	printf("wm_handle_ptr: %p - %d,%d %d,%d (%d) -- \n",
+			win, ptr.x, ptr.y, ptr.rx, ptr.ry, mode);
 	int dx = ptr.rx - kptr.rx;
 	int dy = ptr.ry - kptr.ry;
 	if (mode == move)
 		sys_move(kwin, kwin->x+dx, kwin->y+dy, kwin->w, kwin->h);
 	else if (mode == resize)
 		sys_move(kwin, kwin->x, kwin->y, kwin->w+dx, kwin->h+dy);
+	return 0;
 }
 
 void wm_init(win_t *root)

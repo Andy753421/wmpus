@@ -5,9 +5,13 @@
 
 #define countof(x) (sizeof(x)/sizeof((x)[0]))
 
-#define map_get(map, key) ({ \
+#define map_getg(map, test) ({ \
 	int i; \
-	for (i = 0; i < countof(map) && \
-		*((typeof(key)*)&map[i]) != key; i++); \
+	for (i = 0; i < countof(map) && !(test); i++); \
 	i < countof(map) ? &map[i] : NULL ; \
 })
+
+#define map_get(m,k)    map_getg(m,k==*((typeof(k)*)&m[i]))
+#define map_getr(m,k)   map_getg(m,k==*(((typeof(k)*)&m[i+1])-1))
+#define map_getk(m,k,a) map_getg(m,k==m[i].a)
+

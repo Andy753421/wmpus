@@ -19,7 +19,7 @@ struct win_sys {
 struct {
 	Key_t key;
 	int   sym;
-} keymap[] = {
+} key2sym[] = {
 	{key_left    , XK_Left },
 	{key_right   , XK_Right},
 	{key_up      , XK_Up   },
@@ -61,17 +61,11 @@ unsigned int mod2x(mod_t mod)
 
 KeySym key2x(Key_t key)
 {
-	for (int i = 0; i < countof(keymap); i++)
-		if (keymap[i].key == key)
-			return keymap[i].sym;
-	return key;
+	return map_get(key2sym,key)->sym  ?: key;
 }
 Key_t x2key(KeySym sym)
 {
-	for (int i = 0; i < countof(keymap); i++)
-		if (keymap[i].sym == sym)
-			return keymap[i].key;
-	return sym;
+	return map_getr(key2sym,sym)->key ?: sym;
 }
 
 int btn2x(Key_t key)
@@ -115,6 +109,8 @@ void sys_watch(win_t *win, Key_t key, mod_t mod)
 
 win_t *win_new(Display *xdpy, Window xwin)
 {
+	if (!xdpy || !xwin)
+		return NULL;
 	XWindowAttributes attr;
 	XGetWindowAttributes(xdpy, xwin, &attr);
 	win_t *win    = new0(win_t);
@@ -147,7 +143,7 @@ void sys_run(win_t *root)
 	{
 		XEvent ev;
 		XNextEvent(dpy, &ev);
-		printf("event: %d\n", ev.type);
+		//printf("event: %d\n", ev.type);
 		if (ev.type == KeyPress && ev.xkey.subwindow) {
 			while (XCheckTypedEvent(dpy, KeyPress, &ev));
 			KeySym sym = XKeycodeToKeysym(dpy, ev.xkey.keycode, 0);

@@ -3,16 +3,21 @@ WM=wmii
 SYS=x11
 CC=gcc
 PROG=awm
-CFLAGS=-g -Wall
+CFLAGS=-g -Wall -Os
 LIBS=-Wl,--as-needed -lX11
+TEST=DISPLAY=:2.0
 
 #SYS=win32
 #CC=i686-pc-mingw32-gcc
-#CFLAGS=-g -Wall -mwindows
+#CFLAGS=-g -Wall
 #PROG=awm.exe
+#TEST=wine
 
 test: $(PROG)
-	DISPLAY=:2.0 ./$<
+	$(TEST) ./$<
+
+debug: $(PROG)
+	$(TEST) gdb ./$<
 
 $(PROG): main.o util.o sys-$(SYS).o wm-$(WM).o
 	$(CC) $(CFLAGS) -o $@ $+ $(LIBS)

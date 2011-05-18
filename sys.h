@@ -28,16 +28,18 @@ typedef enum {
 	key_f1, key_f2,  key_f3,  key_f4,
 	key_f5, key_f6,  key_f7,  key_f8,
 	key_f9, key_f10, key_f11, key_f12,
+	key_alt, key_ctrl, key_shift, key_win,
 } Key_t;
 
 typedef struct {
-	int up    : 1;
-	int alt   : 1;
-	int ctrl  : 1;
-	int shift : 1;
-	int win   : 1;
+	unsigned char up    : 1;
+	unsigned char alt   : 1;
+	unsigned char ctrl  : 1;
+	unsigned char shift : 1;
+	unsigned char win   : 1;
 } mod_t;
 #define MOD(...) ((mod_t){__VA_ARGS__})
+#define mod2int(mod) (*((unsigned*)&(mod)))
 
 typedef struct {
 	int  x,  y;
