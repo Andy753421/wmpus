@@ -32,14 +32,15 @@ typedef enum {
 } Key_t;
 
 typedef struct {
-	unsigned char up    : 1;
 	unsigned char alt   : 1;
 	unsigned char ctrl  : 1;
 	unsigned char shift : 1;
 	unsigned char win   : 1;
+	unsigned char up    : 1;
+	unsigned char spare : 3;
 } mod_t;
 #define MOD(...) ((mod_t){__VA_ARGS__})
-#define mod2int(mod) (*((unsigned*)&(mod)))
+#define mod2int(mod) (*((unsigned short*)&(mod)))
 
 typedef struct {
 	int  x,  y;

@@ -15,11 +15,13 @@ struct win_sys {
 	Display *dpy;
 };
 
-/* Conversion functions */
-struct {
+typedef struct {
 	Key_t key;
 	int   sym;
-} key2sym[] = {
+} keymap_t;
+
+/* Conversion functions */
+keymap_t key2sym[] = {
 	{key_left    , XK_Left },
 	{key_right   , XK_Right},
 	{key_up      , XK_Up   },
@@ -42,15 +44,18 @@ struct {
 	{key_f12     , XK_F12  },
 };
 
-mod_t x2mod(unsigned int state)
+/* - Modifiers */
+mod_t x2mod(unsigned int state, int up)
 {
 	return (mod_t){
 	       .alt   = !!(state & Mod1Mask   ),
 	       .ctrl  = !!(state & ControlMask),
 	       .shift = !!(state & ShiftMask  ),
 	       .win   = !!(state & Mod4Mask   ),
+	       .up    = up,
 	};
 }
+
 unsigned int mod2x(mod_t mod)
 {
 	return mod.alt   ? Mod1Mask    : 0
@@ -59,31 +64,63 @@ unsigned int mod2x(mod_t mod)
 	     | mod.win   ? Mod4Mask    : 0;
 }
 
-KeySym key2x(Key_t key)
-{
-	return map_get(key2sym,key)->sym  ?: key;
-}
+/* - Keycodes */
 Key_t x2key(KeySym sym)
 {
-	return map_getr(key2sym,sym)->key ?: sym;
+	keymap_t *km = map_getr(key2sym,sym);
+	return km ? km->key : sym;
+}
+
+KeySym key2x(Key_t key)
+{
+	keymap_t *km = map_get(key2sym,key);
+	return km ? km->sym : key;
+}
+
+Key_t x2btn(int btn)
+{
+	return btn + key_mouse0;
 }
 
 int btn2x(Key_t key)
 {
 	return key - key_mouse0;
 }
-Key_t x2btn(int btn)
-{
-	return btn + key_mouse0;
-}
 
+/* - Pointers */
 ptr_t x2ptr(XEvent _ev)
 {
 	XKeyEvent ev = _ev.xkey;
 	return (ptr_t){ev.x, ev.y, ev.x_root, ev.y_root};
 }
 
-/* Functions */
+/* Helper functions */
+win_t *win_new(Display *xdpy, Window xwin)
+{
+	if (!xdpy || !xwin)
+		return NULL;
+	XWindowAttributes attr;
+	XGetWindowAttributes(xdpy, xwin, &attr);
+	win_t *win    = new0(win_t);
+	win->x        = attr.x;
+	win->y        = attr.y;
+	win->w        = attr.width;
+	win->h        = attr.height;
+	win->sys      = new0(win_sys_t);
+	win->sys->dpy = xdpy;
+	win->sys->win = xwin;
+	return win;
+}
+
+void win_free(win_t *win)
+{
+	free(win->sys);
+	free(win);
+}
+
+/*****************
+ * Sys functions *
+ *****************/
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
@@ -107,28 +144,6 @@ void sys_watch(win_t *win, Key_t key, mod_t mod)
 				mod2x(mod), win->sys->win, True, GrabModeAsync, GrabModeAsync);
 }
 
-win_t *win_new(Display *xdpy, Window xwin)
-{
-	if (!xdpy || !xwin)
-		return NULL;
-	XWindowAttributes attr;
-	XGetWindowAttributes(xdpy, xwin, &attr);
-	win_t *win    = new0(win_t);
-	win->x        = attr.x;
-	win->y        = attr.y;
-	win->w        = attr.width;
-	win->h        = attr.height;
-	win->sys      = new0(win_sys_t);
-	win->sys->dpy = xdpy;
-	win->sys->win = xwin;
-	return win;
-}
-void win_free(win_t *win)
-{
-	free(win->sys);
-	free(win);
-}
-
 win_t *sys_init(void)
 {
 	Display *xdpy = XOpenDisplay(NULL);
@@ -144,15 +159,16 @@ void sys_run(win_t *root)
 		XEvent ev;
 		XNextEvent(dpy, &ev);
 		//printf("event: %d\n", ev.type);
-		if (ev.type == KeyPress && ev.xkey.subwindow) {
+		if (ev.type == KeyPress) {
 			while (XCheckTypedEvent(dpy, KeyPress, &ev));
 			KeySym sym = XKeycodeToKeysym(dpy, ev.xkey.keycode, 0);
 			wm_handle_key(win_new(dpy, ev.xkey.subwindow),
-					x2key(sym), x2mod(ev.xkey.state), x2ptr(ev));
+					x2key(sym), x2mod(ev.xkey.state,0), x2ptr(ev));
 		}
-		else if (ev.type == ButtonPress && ev.xbutton.subwindow) {
+		else if (ev.type == ButtonPress) {
 			wm_handle_key(win_new(dpy, ev.xkey.subwindow),
-					x2btn(ev.xbutton.button), MOD(.up=0), x2ptr(ev));
+					x2btn(ev.xbutton.button),
+					x2mod(ev.xbutton.state,0), x2ptr(ev));
 			XGrabPointer(dpy, ev.xkey.subwindow, True,
 					PointerMotionMask|ButtonReleaseMask, GrabModeAsync,
 					GrabModeAsync, None, None, CurrentTime);
@@ -160,7 +176,8 @@ void sys_run(win_t *root)
 		else if(ev.type == ButtonRelease) {
 			XUngrabPointer(dpy, CurrentTime);
 			wm_handle_key(win_new(dpy, ev.xkey.subwindow),
-					x2btn(ev.xbutton.button), MOD(.up=1), x2ptr(ev));
+					x2btn(ev.xbutton.button),
+					x2mod(ev.xbutton.state,1), x2ptr(ev));
 		}
 		else if(ev.type == MotionNotify) {
 			while (XCheckTypedEvent(dpy, MotionNotify, &ev));

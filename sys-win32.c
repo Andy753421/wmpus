@@ -26,20 +26,6 @@ typedef struct {
 	int   vk;
 } keymap_t;
 
-win_t *win_new(HWND hwnd)
-{
-	RECT rect = {};
-	GetWindowRect(hwnd, &rect);
-	win_t *win = new0(win_t);
-	win->x         = rect.left;
-	win->y         = rect.top;
-	win->w         = rect.right  - rect.left;
-	win->h         = rect.bottom - rect.top;
-	win->sys       = new0(win_sys_t);
-	win->sys->hwnd = hwnd;
-	return win;
-}
-
 /* Conversion functions */
 keymap_t key2vk[] = {
 	{key_mouse1  , VK_LBUTTON },
@@ -78,17 +64,20 @@ keymap_t key2vk[] = {
 	{key_win     , VK_RWIN    },
 };
 
-UINT key2w(Key_t key)
-{
-	keymap_t *km = map_get(key2vk,key);
-	return km ? km->vk : toupper(key);
-}
+/* - Keycodes */
 Key_t w2key(UINT vk)
 {
 	keymap_t *km = map_getr(key2vk,vk);
 	return km ? km->key : vk;
 }
 
+UINT key2w(Key_t key)
+{
+	keymap_t *km = map_get(key2vk,key);
+	return km ? km->vk : toupper(key);
+}
+
+/* - Pointers */
 ptr_t getptr(void)
 {
 	POINT wptr;
@@ -96,23 +85,22 @@ ptr_t getptr(void)
 	return (ptr_t){-1, -1, wptr.x, wptr.y};
 }
 
-/* Functions */
-void sys_move(win_t *win, int x, int y, int w, int h)
+/* Helper functions */
+win_t *win_new(HWND hwnd)
 {
-	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	MoveWindow(win->sys->hwnd, x, y, w, h, TRUE);
+	RECT rect = {};
+	GetWindowRect(hwnd, &rect);
+	win_t *win = new0(win_t);
+	win->x         = rect.left;
+	win->y         = rect.top;
+	win->w         = rect.right  - rect.left;
+	win->h         = rect.bottom - rect.top;
+	win->sys       = new0(win_sys_t);
+	win->sys->hwnd = hwnd;
+	return win;
 }
 
-void sys_raise(win_t *win)
-{
-	printf("sys_raise: %p\n", win);
-}
-
-void sys_watch(win_t *win, Key_t key, mod_t mod)
-{
-	printf("sys_watch: %p\n", win);
-}
-
+/* Callbacks */
 LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 {
 	KBDLLHOOKSTRUCT *st = (KBDLLHOOKSTRUCT *)lParam;
@@ -180,6 +168,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return ShlWndProc(hwnd, msg, wParam, lParam);
 	}
 	return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+/*****************
+ * Sys functions *
+ *****************/
+void sys_move(win_t *win, int x, int y, int w, int h)
+{
+	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
+	MoveWindow(win->sys->hwnd, x, y, w, h, TRUE);
+}
+
+void sys_raise(win_t *win)
+{
+	printf("sys_raise: %p\n", win);
+}
+
+void sys_watch(win_t *win, Key_t key, mod_t mod)
+{
+	printf("sys_watch: %p\n", win);
 }
 
 win_t *sys_init(void)

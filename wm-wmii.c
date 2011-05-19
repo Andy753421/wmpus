@@ -13,7 +13,10 @@ Mode_t mode;
 
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
-	printf("wm_handle_key: %p - %x\n", win, key);
+	if (!win)
+		return;
+	printf("wm_handle_key: %p - %x %hhx\n",
+			win, key, mod2int(mod));
 	kptr = ptr;
 	kwin = win;
 
