@@ -26,7 +26,6 @@ typedef struct {
 	int   vk;
 } keymap_t;
 
-/* Conversion functions */
 keymap_t key2vk[] = {
 	{key_mouse1  , VK_LBUTTON },
 	{key_mouse2  , VK_MBUTTON },
@@ -64,6 +63,22 @@ keymap_t key2vk[] = {
 	{key_win     , VK_RWIN    },
 };
 
+/* Helper functions */
+win_t *win_new(HWND hwnd)
+{
+	RECT rect = {};
+	GetWindowRect(hwnd, &rect);
+	win_t *win = new0(win_t);
+	win->x         = rect.left;
+	win->y         = rect.top;
+	win->w         = rect.right  - rect.left;
+	win->h         = rect.bottom - rect.top;
+	win->sys       = new0(win_sys_t);
+	win->sys->hwnd = hwnd;
+	return win;
+}
+
+/* Conversion functions */
 /* - Keycodes */
 Key_t w2key(UINT vk)
 {
@@ -85,19 +100,11 @@ ptr_t getptr(void)
 	return (ptr_t){-1, -1, wptr.x, wptr.y};
 }
 
-/* Helper functions */
-win_t *win_new(HWND hwnd)
+win_t *getwin(void)
 {
-	RECT rect = {};
-	GetWindowRect(hwnd, &rect);
-	win_t *win = new0(win_t);
-	win->x         = rect.left;
-	win->y         = rect.top;
-	win->w         = rect.right  - rect.left;
-	win->h         = rect.bottom - rect.top;
-	win->sys       = new0(win_sys_t);
-	win->sys->hwnd = hwnd;
-	return win;
+	POINT wptr;
+	GetCursorPos(&wptr);
+	return win_new(GetAncestor(WindowFromPoint(wptr),GA_ROOT));
 }
 
 /* Callbacks */
@@ -114,15 +121,13 @@ LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 			msg, wParam, lParam,
 			st->vkCode, st->scanCode, st->flags,
 			key, mod2int(mod_state));
-	HWND fghwnd = GetForegroundWindow();
-	wm_handle_key(win_new(fghwnd), key, mod_state, getptr());
+	wm_handle_key(getwin(), key, mod_state, getptr());
 	return CallNextHookEx(0, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK MllProc(int msg, WPARAM wParam, LPARAM lParam)
 {
 	Key_t key   = key_none;
-	HWND fghwnd = GetForegroundWindow();
 	switch (wParam) {
 	case WM_LBUTTONDOWN: mod_state.up = 0; key = key_mouse1; break;
 	case WM_LBUTTONUP:   mod_state.up = 1; key = key_mouse1; break;
@@ -130,9 +135,9 @@ LRESULT CALLBACK MllProc(int msg, WPARAM wParam, LPARAM lParam)
 	case WM_RBUTTONUP:   mod_state.up = 1; key = key_mouse3; break;
 	}
 	if (wParam == WM_MOUSEMOVE)
-		return wm_handle_ptr(win_new(fghwnd), getptr());
+		return wm_handle_ptr(getwin(), getptr());
 	else if (key != key_none)
-		return wm_handle_key(win_new(fghwnd), key, mod_state, getptr());
+		return wm_handle_key(getwin(), key, mod_state, getptr());
 	else
 		return CallNextHookEx(0, msg, wParam, lParam);
 }
@@ -182,6 +187,37 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 void sys_raise(win_t *win)
 {
 	printf("sys_raise: %p\n", win);
+	SetForegroundWindow(win->sys->hwnd);
+	//HWND hwnd = win->sys->hwnd;
+	//HWND top  = GetAncestor(hwnd,GA_ROOT);
+	//SetWindowPos(top, HWND_TOPMOST, 0, 0, 0, 0,
+	//		SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+}
+
+void sys_focus(win_t *win)
+{
+	printf("sys_focus: %p\n", win);
+	//POINT wptr;
+	//GetCursorPos(&wptr);
+	//HWND old  = GetForegroundWindow();
+	//HWND newc = WindowFromPoint(wptr);
+	//HWND new  = GetAncestor(newc,GA_ROOT);
+	//SetWindowPos(new, HWND_NOTOPMOST, 0, 0, 0, 0,
+	//		SWP_NOMOVE|SWP_NOSIZE);
+	//SetWindowPos(old, HWND_NOTOPMOST, 0, 0, 0, 0,
+	//		SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+	//SetFocus(hwnd);
+	//SetActiveWindow(hwnd);
+
+	// Go to: HKEY_CURRENT_USER\Control Panel\Mouse
+	// Modify/Create DWORD Value of Data type REG_DWORD Named [ActiveWindowTracking] Setting for Value Data: [0 = ActiveWindowTracking Disabled / 1 = ActiveWindowTracking Enabled]
+
+	//LockSetForegroundWindow(LSFW_LOCK);
+	//SetForegroundWindow(win->sys->hwnd);
+	//LockSetForegroundWindow(LSFW_UNLOCK);
+	//SetFocus(win->sys->hwnd);
+	//SetActiveWindow(win->sys->hwnd);
+	//EnableWindow(win->sys->hwnd, TRUE);
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)

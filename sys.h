@@ -53,6 +53,8 @@ void sys_move(win_t *win, int x, int y, int w, int h);
 
 void sys_raise(win_t *win);
 
+void sys_focus(win_t *win);
+
 win_t *sys_init(void);
 
 void sys_run(win_t *root);
