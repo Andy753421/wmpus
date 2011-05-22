@@ -55,6 +55,8 @@ void sys_raise(win_t *win);
 
 void sys_focus(win_t *win);
 
+void sys_foreach(win_t *win);
+
 win_t *sys_init(void);
 
 void sys_run(win_t *root);

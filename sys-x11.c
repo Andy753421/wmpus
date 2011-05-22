@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <search.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
@@ -11,7 +12,7 @@
 
 /* Internal structures */
 struct win_sys {
-	Window   win;
+	Window   xid;
 	Display *dpy;
 };
 
@@ -19,6 +20,9 @@ typedef struct {
 	Key_t key;
 	int   sym;
 } keymap_t;
+
+/* Global data */
+void *win_cache = NULL;
 
 /* Conversion functions */
 keymap_t key2sym[] = {
@@ -88,34 +92,130 @@ int btn2x(Key_t key)
 }
 
 /* - Pointers */
-ptr_t x2ptr(XEvent _ev)
+ptr_t x2ptr(XEvent *_ev)
 {
-	XKeyEvent ev = _ev.xkey;
-	return (ptr_t){ev.x, ev.y, ev.x_root, ev.y_root};
+	XKeyEvent *ev = &_ev->xkey;
+	return (ptr_t){ev->x, ev->y, ev->x_root, ev->y_root};
 }
 
 /* Helper functions */
-win_t *win_new(Display *xdpy, Window xwin)
+win_t *win_new(Display *dpy, Window xid)
 {
-	if (!xdpy || !xwin)
-		return NULL;
 	XWindowAttributes attr;
-	XGetWindowAttributes(xdpy, xwin, &attr);
+	XGetWindowAttributes(dpy, xid, &attr);
 	win_t *win    = new0(win_t);
 	win->x        = attr.x;
 	win->y        = attr.y;
 	win->w        = attr.width;
 	win->h        = attr.height;
 	win->sys      = new0(win_sys_t);
-	win->sys->dpy = xdpy;
-	win->sys->win = xwin;
+	win->sys->dpy = dpy;
+	win->sys->xid = xid;
+	printf("win_new: %p = %p, %d\n", win, dpy, (int)xid);
 	return win;
 }
 
-void win_free(win_t *win)
+int win_cmp(const void *_a, const void *_b)
 {
+	const win_t *a = _a, *b = _b;
+	if (a->sys->dpy < b->sys->dpy) return -1;
+	if (a->sys->dpy > b->sys->dpy) return  1;
+	if (a->sys->xid < b->sys->xid) return -1;
+	if (a->sys->xid > b->sys->xid) return  1;
+	return 0;
+}
+
+win_t *win_find(Display *dpy, Window xid)
+{
+	if (!dpy || !xid)
+		return NULL;
+	//printf("win_find: %p, %d\n", dpy, (int)xid);
+	win_sys_t sys = {.dpy=dpy, .xid=xid};
+	win_t     tmp = {.sys=&sys};
+	return *(win_t**)(tfind(&tmp, &win_cache, win_cmp) ?:
+		tsearch(win_new(dpy,xid), &win_cache, win_cmp));
+}
+
+void win_remove(win_t *win)
+{
+	tdelete(win, &win_cache, win_cmp);
 	free(win->sys);
 	free(win);
+}
+
+/* Callbacks */
+void process_event(int type, XEvent *ev, win_t *root)
+{
+	Display  *dpy = root->sys->dpy;
+	Window    rid = root->sys->xid;
+
+	/* Common data for all these events ... */
+	win_t *win = NULL; ptr_t ptr; mod_t mod;
+	if (type == KeyPress    || type == KeyRelease    ||
+	    type == ButtonPress || type == ButtonRelease ||
+	    type == MotionNotify) {
+		Window xid = ev->xkey.subwindow ?: rid;
+		win = win_find(dpy,xid);
+		ptr = x2ptr(ev);
+		mod = x2mod(ev->xkey.state, type==KeyRelease||type==ButtonRelease);
+	}
+
+	/* Split based on event */
+	//printf("event: %d\n", type);
+	if (type == KeyPress) {
+		while (XCheckTypedEvent(dpy, KeyPress, ev));
+		KeySym sym = XKeycodeToKeysym(dpy, ev->xkey.keycode, 0);
+		wm_handle_key(win, x2key(sym), mod, ptr);
+	}
+	else if (type == KeyRelease) {
+		//printf("release: %d\n", type);
+	}
+	else if (type == ButtonPress) {
+		wm_handle_key(win, x2btn(ev->xbutton.button), mod, ptr);
+		XGrabPointer(dpy, win->sys->xid, True, PointerMotionMask|ButtonReleaseMask,
+				GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+	}
+	else if (type == ButtonRelease) {
+		XUngrabPointer(dpy, CurrentTime);
+		wm_handle_key(win, x2btn(ev->xbutton.button), mod, ptr);
+	}
+	else if (type == MotionNotify) {
+		while (XCheckTypedEvent(dpy, MotionNotify, ev));
+		wm_handle_ptr(win, ptr);
+	}
+	else if (type == ConfigureNotify) {
+		//printf("configure: %d\n", type);
+	}
+	else if (type == MapNotify) {
+		//printf("map: %d\n", type);
+	}
+	else if (type == DestroyNotify) {
+		//printf("destory: %d\n", type);
+		win_remove(win_find(dpy,ev->xdestroywindow.window));
+	}
+	else if (type == UnmapNotify) {
+		//printf("unmap: %d\n", type);
+		wm_remove(win_find(dpy,ev->xmap.window));
+	}
+	else if (type == ConfigureRequest) {
+		XConfigureRequestEvent *cre = &ev->xconfigurerequest;
+		XWindowChanges wc = {
+			.x     = cre->x,     .y      = cre->y,
+			.width = cre->width, .height = cre->height,
+		};
+		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
+				type, (int)cre->window, cre->value_mask,
+				cre->height, cre->width, cre->x, cre->y);
+		XConfigureWindow(dpy, cre->window, cre->value_mask, &wc);
+	}
+	else if (type == MapRequest) {
+		printf("map_req: %d\n", type);
+		wm_insert(win_find(dpy,ev->xmaprequest.window));
+		XMapWindow(dpy,ev->xmaprequest.window);
+	}
+	else {
+		printf("unknown event: %d\n", type);
+	}
 }
 
 /*****************
@@ -123,65 +223,59 @@ void win_free(win_t *win)
  *****************/
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
-	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	XMoveResizeWindow(win->sys->dpy, win->sys->win, x, y, w, h);
+	//printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
+	win->x = x; win->y = y;
+	win->w = w; win->h = h;
+	XMoveResizeWindow(win->sys->dpy, win->sys->xid, x, y, w, h);
 }
 
 void sys_raise(win_t *win)
 {
-	printf("sys_raise: %p\n", win);
-	XRaiseWindow(win->sys->dpy, win->sys->win);
+	//printf("sys_raise: %p\n", win);
+	XRaiseWindow(win->sys->dpy, win->sys->xid);
+}
+
+void sys_focus(win_t *win)
+{
+	//printf("sys_raise: %p\n", win);
+	XSetInputFocus(win->sys->dpy, win->sys->xid,
+			RevertToNone, CurrentTime);
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)
 {
 	if (key_mouse0 <= key && key <= key_mouse7)
-		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->win, True,
+		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid, True,
 				mod.up ? ButtonReleaseMask : ButtonPressMask,
 				GrabModeAsync, GrabModeAsync, None, None);
 	else
 		XGrabKey(win->sys->dpy, XKeysymToKeycode(win->sys->dpy, key2x(key)),
-				mod2x(mod), win->sys->win, True, GrabModeAsync, GrabModeAsync);
+				mod2x(mod), win->sys->xid, True, GrabModeAsync, GrabModeAsync);
 }
 
 win_t *sys_init(void)
 {
-	Display *xdpy = XOpenDisplay(NULL);
-	Window   xwin = DefaultRootWindow(xdpy);
-	return win_new(xdpy, xwin);
+	Display *dpy = XOpenDisplay(NULL);
+	Window   xid = DefaultRootWindow(dpy);
+	XSelectInput(dpy, xid, SubstructureNotifyMask|SubstructureRedirectMask);
+	return win_find(dpy, xid);
 }
 
 void sys_run(win_t *root)
 {
-	Display *dpy = root->sys->dpy;
+	/* Add each initial window */
+	unsigned int nkids;
+	Window par, win, *kids = NULL;
+	if (XQueryTree(root->sys->dpy, root->sys->xid,
+				&par, &win, &kids, &nkids))
+		for(int i = 0; i < nkids; i++)
+			wm_insert(win_find(root->sys->dpy, kids[i]));
+
+	/* Main loop */
 	for(;;)
 	{
 		XEvent ev;
-		XNextEvent(dpy, &ev);
-		//printf("event: %d\n", ev.type);
-		if (ev.type == KeyPress) {
-			while (XCheckTypedEvent(dpy, KeyPress, &ev));
-			KeySym sym = XKeycodeToKeysym(dpy, ev.xkey.keycode, 0);
-			wm_handle_key(win_new(dpy, ev.xkey.subwindow),
-					x2key(sym), x2mod(ev.xkey.state,0), x2ptr(ev));
-		}
-		else if (ev.type == ButtonPress) {
-			wm_handle_key(win_new(dpy, ev.xkey.subwindow),
-					x2btn(ev.xbutton.button),
-					x2mod(ev.xbutton.state,0), x2ptr(ev));
-			XGrabPointer(dpy, ev.xkey.subwindow, True,
-					PointerMotionMask|ButtonReleaseMask, GrabModeAsync,
-					GrabModeAsync, None, None, CurrentTime);
-		}
-		else if(ev.type == ButtonRelease) {
-			XUngrabPointer(dpy, CurrentTime);
-			wm_handle_key(win_new(dpy, ev.xkey.subwindow),
-					x2btn(ev.xbutton.button),
-					x2mod(ev.xbutton.state,1), x2ptr(ev));
-		}
-		else if(ev.type == MotionNotify) {
-			while (XCheckTypedEvent(dpy, MotionNotify, &ev));
-			wm_handle_ptr(win_new(dpy, ev.xkey.subwindow), x2ptr(ev));
-		}
+		XNextEvent(root->sys->dpy, &ev);
+		process_event(ev.type, &ev, root);
 	}
 }

@@ -7,6 +7,7 @@
 
 int main(int argc, char **argv)
 {
+	setbuf(stdout, NULL); // debug
 	win_t *root = sys_init();
 	wm_init(root);
 	sys_run(root);

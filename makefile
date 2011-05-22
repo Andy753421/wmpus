@@ -1,17 +1,19 @@
 WM=wmii
 
-#SYS=x11
-#CC=gcc
-#PROG=awm
-#CFLAGS=-g -Wall -Os
-#LIBS=-Wl,--as-needed -lX11
-#TEST=DISPLAY=:2.0
+SYS=x11
+CC=gcc
+PROG=awm
+CFLAGS=-g -Wall -Os
+LIBS=-Wl,--as-needed -lX11
+TEST=DISPLAY=:2.0
 
+ifdef WIN32
 SYS=win32
 CC=i686-pc-mingw32-gcc
 CFLAGS=-g -Wall
 PROG=awm.exe
 TEST=wine
+endif
 
 test: $(PROG)
 	$(TEST) ./$<
