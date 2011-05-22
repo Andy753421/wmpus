@@ -26,6 +26,8 @@ typedef struct list {
 
 list_t *list_insert(list_t *after, void *data);
 
+list_t *list_append(list_t *before, void *data);
+
 list_t *list_remove(list_t *head, list_t *item);
 
 int list_length(list_t *item);

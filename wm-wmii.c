@@ -24,7 +24,7 @@ typedef enum {
 typedef struct {
 	int     width;
 	group_t group;
-	list_t *wins;
+	list_t *rows;
 } col_t;
 
 /* Mouse drag data */
@@ -53,7 +53,7 @@ static void print_txt(list_t *cols)
 	for (list_t *cnode = cols; cnode; cnode = cnode->next) {
 		col_t *col = cnode->data;
 		printf("col:\t%p - %dpx @ %d\n", col, col->width, col->group);
-		for (list_t *wnode = col->wins; wnode; wnode = wnode->next) {
+		for (list_t *wnode = col->rows; wnode; wnode = wnode->next) {
 			win_t *win = wnode->data;
 			printf("  win:\t%p - %dpx\n", win, win->h);
 		}
@@ -78,10 +78,11 @@ static void arrange(list_t *cols)
 	/* Scale each column vertically */
 	for (list_t *lx = cols; lx; lx = lx->next) {
 		col_t *col = lx->data;
-		for (list_t *ly = col->wins; ly; ly = ly->next)
+		ty = 0;
+		for (list_t *ly = col->rows; ly; ly = ly->next)
 			ty += ((win_t*)ly->data)->h;
 		y = 0;
-		for (list_t *ly = col->wins; ly; ly = ly->next) {
+		for (list_t *ly = col->rows; ly; ly = ly->next) {
 			win_t *win = ly->data;
 			sys_move(win, x, y, col->width,
 				win->h * ((float)my / ty));
@@ -94,6 +95,50 @@ static void arrange(list_t *cols)
 static void shift_window(win_t *win, int col, int row)
 {
 	printf("shift_window: %p - %+d,%+d\n", win, col, row);
+	print_txt(wm_cols);
+	printf("shift_window: >>>\n");
+	if (row != 0) {
+		list_t *src = win->wm->row, *dst = NULL;
+		if (row < 0) dst = src->prev;
+		if (row > 0) dst = src->next;
+		if (src && dst) {
+			printf("swap: %p <-> %p\n", src->data, dst->data);
+			src->data = dst->data;
+			dst->data = win;
+			((win_t*)src->data)->wm->row = src;
+			((win_t*)dst->data)->wm->row = dst;
+			arrange(wm_cols);
+		}
+	} else {
+		int onlyrow = !win->wm->row->prev && !win->wm->row->next;
+		list_t *src = win->wm->col, *dst = NULL;
+		if (col < 0) {
+			if (!src->prev && !onlyrow)
+				wm_cols = list_insert(wm_cols, new0(col_t));
+			dst = src->prev;
+		}
+		if (col > 0) {
+			if (!src->next && !onlyrow)
+				wm_cols = list_append(wm_cols, new0(col_t));
+			dst = src->next;
+		}
+		if (src && dst) {
+			col_t *scol = src->data;
+			col_t *dcol = dst->data;
+			scol->rows = list_remove(scol->rows, win->wm->row);
+			dcol->rows = list_insert(dcol->rows, win);
+			win->wm->row = dcol->rows;
+			win->wm->col = dst;
+			if (onlyrow) // delete column
+				wm_cols = list_remove(wm_cols, src);
+			if (dcol->width == 0) // new column
+				dcol->width = wm_root->w / (list_length(wm_cols)-1);
+			else
+				win->h      = wm_root->h / (list_length(dcol->rows)-1);
+			arrange(wm_cols);
+		}
+	}
+	print_txt(wm_cols);
 }
 
 static void shift_focus(win_t *win, int col, int row)
@@ -106,7 +151,7 @@ static void shift_focus(win_t *win, int col, int row)
 	} else {
 		if (col < 0) node = win->wm->col->prev;
 		if (col > 0) node = win->wm->col->next;
-		if (node) node = ((col_t*)node->data)->wins;
+		if (node) node = ((col_t*)node->data)->rows;
 	}
 	if (node)
 		sys_focus(node->data);
@@ -116,7 +161,7 @@ static void shift_focus(win_t *win, int col, int row)
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
 	if (!win) return 0;
-	//printf("wm_handle_key: %p - %x\n", win, key);
+	//printf("wm_handle_key: %p - %x %x\n", win, key, mod);
 
 	/* Raise */
 	if (key == key_f2)
@@ -131,19 +176,19 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	/* Key commands */
 	if (mod.MODKEY && mod.shift) {
 		switch (key) {
-		case 'h': case 'H': return shift_window(win,-1, 0), 1;
-		case 'k': case 'K': return shift_window(win, 0,-1), 1;
-		case 'j': case 'J': return shift_window(win,+1, 0), 1;
-		case 'l': case 'L': return shift_window(win, 0,+1), 1;
+		case 'h': return shift_window(win,-1, 0), 1;
+		case 'j': return shift_window(win, 0,+1), 1;
+		case 'k': return shift_window(win, 0,-1), 1;
+		case 'l': return shift_window(win,+1, 0), 1;
 		default: break;
 		}
 	}
 	else if (mod.MODKEY) {
 		switch (key) {
-		case 'h': case 'H': return shift_focus(win,-1, 0), 1;
-		case 'k': case 'K': return shift_focus(win, 0,-1), 1;
-		case 'j': case 'J': return shift_focus(win,+1, 0), 1;
-		case 'l': case 'L': return shift_focus(win, 0,+1), 1;
+		case 'h': return shift_focus(win,-1, 0), 1;
+		case 'j': return shift_focus(win, 0,+1), 1;
+		case 'k': return shift_focus(win, 0,-1), 1;
+		case 'l': return shift_focus(win,+1, 0), 1;
 		default: break;
 		}
 	}
@@ -183,14 +228,14 @@ void wm_insert(win_t *win)
 
 	/* Add to screen */
 	col_t *col = wm_cols->data;
-	int nwins = list_length(col->wins);
-	col->wins = list_insert(col->wins, win);
+	int nrows = list_length(col->rows);
+	col->rows = list_insert(col->rows, win);
 
 	/* Setup window */
 	win->wm = new0(win_wm_t);
 	win->wm->col = wm_cols;
-	win->wm->row = col->wins;
-	if (nwins) win->h = wm_root->h / nwins;
+	win->wm->row = col->rows;
+	if (nrows) win->h = wm_root->h / nrows;
 
 	/* Arrange */
 	arrange(wm_cols);
@@ -203,7 +248,7 @@ void wm_remove(win_t *win)
 			win->wm->col, win->wm->row);
 	print_txt(wm_cols);
 	col_t *col = win->wm->col->data;
-	col->wins = list_remove(col->wins, win->wm->row);
+	col->rows = list_remove(col->rows, win->wm->row);
 	arrange(wm_cols);
 	print_txt(wm_cols);
 }
@@ -215,9 +260,11 @@ void wm_init(win_t *root)
 	sys_watch(root, key_f1,     MOD(.MODKEY=1));
 	sys_watch(root, key_mouse1, MOD(.MODKEY=1));
 	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
-	key_t keys[] = {'h', 'j', 'k', 'l', 'H', 'J', 'K', 'L'};
-	for (int i = 0; i < countof(keys); i++)
+	key_t keys[] = {'h', 'j', 'k', 'l'};
+	for (int i = 0; i < countof(keys); i++) {
 		sys_watch(root, keys[i], MOD(.MODKEY=1));
+		sys_watch(root, keys[i], MOD(.MODKEY=1,.shift=1));
+	}
 	col_t *col = new0(col_t);
 	col->group = stack;
 	col->width = root->w;

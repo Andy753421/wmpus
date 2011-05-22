@@ -21,6 +21,12 @@ typedef struct {
 	int   sym;
 } keymap_t;
 
+typedef enum {
+	wm_proto, wm_focus, natoms
+} atom_t;
+
+Atom atoms[natoms];
+
 /* Global data */
 void *win_cache = NULL;
 
@@ -62,10 +68,10 @@ mod_t x2mod(unsigned int state, int up)
 
 unsigned int mod2x(mod_t mod)
 {
-	return mod.alt   ? Mod1Mask    : 0
-	     | mod.ctrl  ? ControlMask : 0
-	     | mod.shift ? ShiftMask   : 0
-	     | mod.win   ? Mod4Mask    : 0;
+	return (mod.alt   ? Mod1Mask    : 0)
+	     | (mod.ctrl  ? ControlMask : 0)
+	     | (mod.shift ? ShiftMask   : 0)
+	     | (mod.win   ? Mod4Mask    : 0);
 }
 
 /* - Keycodes */
@@ -96,6 +102,18 @@ ptr_t x2ptr(XEvent *_ev)
 {
 	XKeyEvent *ev = &_ev->xkey;
 	return (ptr_t){ev->x, ev->y, ev->x_root, ev->y_root};
+}
+Window getfocus(win_t *root, XEvent *event)
+{
+	int revert;
+	Window focus = PointerRoot;
+	if (event->type == KeyPress || event->type == KeyRelease)
+		XGetInputFocus(root->sys->dpy, &focus, &revert);
+	if (focus == PointerRoot)
+		focus = event->xkey.subwindow;
+	if (focus == None)
+		focus = event->xkey.window;
+	return focus;
 }
 
 /* Helper functions */
@@ -147,14 +165,13 @@ void win_remove(win_t *win)
 void process_event(int type, XEvent *ev, win_t *root)
 {
 	Display  *dpy = root->sys->dpy;
-	Window    rid = root->sys->xid;
 
 	/* Common data for all these events ... */
 	win_t *win = NULL; ptr_t ptr; mod_t mod;
 	if (type == KeyPress    || type == KeyRelease    ||
 	    type == ButtonPress || type == ButtonRelease ||
 	    type == MotionNotify) {
-		Window xid = ev->xkey.subwindow ?: rid;
+		Window xid = getfocus(root, ev);
 		win = win_find(dpy,xid);
 		ptr = x2ptr(ev);
 		mod = x2mod(ev->xkey.state, type==KeyRelease||type==ButtonRelease);
@@ -238,12 +255,24 @@ void sys_raise(win_t *win)
 void sys_focus(win_t *win)
 {
 	//printf("sys_raise: %p\n", win);
+	XEvent ev = {
+		.type                 = ClientMessage,
+		.xclient.window       = win->sys->xid,
+		.xclient.message_type = atoms[wm_proto],
+		.xclient.format       = 32,
+		.xclient.data.l[0]    = atoms[wm_focus],
+		.xclient.data.l[1]    = CurrentTime,
+	};
 	XSetInputFocus(win->sys->dpy, win->sys->xid,
-			RevertToNone, CurrentTime);
+			RevertToPointerRoot, CurrentTime);
+	//XSetInputFocus(win->sys->dpy, PointerRoot,
+	//		RevertToPointerRoot, CurrentTime);
+	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &ev);
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)
 {
+	//printf("sys_watch: %p - %x %hhx\n", win, key, mod);
 	if (key_mouse0 <= key && key <= key_mouse7)
 		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid, True,
 				mod.up ? ButtonReleaseMask : ButtonPressMask,
@@ -257,6 +286,8 @@ win_t *sys_init(void)
 {
 	Display *dpy = XOpenDisplay(NULL);
 	Window   xid = DefaultRootWindow(dpy);
+	atoms[wm_proto] = XInternAtom(dpy, "WM_PROTOCOLS",  False);
+	atoms[wm_focus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	XSelectInput(dpy, xid, SubstructureNotifyMask|SubstructureRedirectMask);
 	return win_find(dpy, xid);
 }

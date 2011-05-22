@@ -14,6 +14,18 @@ list_t *list_insert(list_t *next, void *data)
 	return node;
 }
 
+list_t *list_append(list_t *head, void *data)
+{
+	list_t *last = head;
+	while (last->next)
+		last = last->next;
+	list_t *node = new0(list_t);
+	node->data = data;
+	node->prev = last;
+	if (last) last->next = node;
+	return last ? head : node;
+}
+
 list_t *list_remove(list_t *head, list_t *node)
 {
 	list_t *next = node->next;
