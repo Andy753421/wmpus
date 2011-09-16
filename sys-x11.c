@@ -181,6 +181,7 @@ void process_event(int type, XEvent *ev, win_t *root)
 {
 	Display  *dpy = root->sys->dpy;
 	win_t *win = NULL;
+	printf("event: %d\n", type);
 
 	/* Common data for all these events ... */
 	ptr_t ptr; mod_t mod;
@@ -195,7 +196,6 @@ void process_event(int type, XEvent *ev, win_t *root)
 	}
 
 	/* Split based on event */
-	printf("event: %d\n", type);
 	if (type == KeyPress) {
 		while (XCheckTypedEvent(dpy, KeyPress, ev));
 		KeySym sym = XKeycodeToKeysym(dpy, ev->xkey.keycode, 0);
@@ -336,7 +336,6 @@ win_t *sys_init(void)
 {
 	Display *dpy;
 	Window   xid;
-
 	if (!(dpy = XOpenDisplay(NULL)))
 		error("Unable to get display");
 	if (!(xid = DefaultRootWindow(dpy)))
@@ -344,7 +343,6 @@ win_t *sys_init(void)
 	atoms[wm_proto] = XInternAtom(dpy, "WM_PROTOCOLS",  False);
 	atoms[wm_focus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
-
 	//XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	return win_find(dpy, xid, 1);
 }

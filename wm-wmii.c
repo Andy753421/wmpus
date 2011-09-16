@@ -212,16 +212,40 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 {
 	//printf("wm_handle_ptr: %p - %d,%d %d,%d (%d) -- \n",
 	//		cwin, ptr.x, ptr.y, ptr.rx, ptr.ry, move_mode);
+
 	if (move_mode == none)
 		return 0;
-	win_t *mwin = move_win;
+
+	/* Tiling */
 	int dx = ptr.rx - move_prev.rx;
 	int dy = ptr.ry - move_prev.ry;
 	move_prev = ptr;
-	if (move_mode == move)
-		sys_move(mwin, mwin->x+dx, mwin->y+dy, mwin->w, mwin->h);
-	else if (move_mode == resize)
-		sys_move(mwin, mwin->x, mwin->y, mwin->w+dx, mwin->h+dy);
+	if (move_mode == resize) {
+		list_t *row   = move_win->wm->row;
+		list_t *col   = move_win->wm->col;
+		list_t *lower = row->next;
+		list_t *right = col->next;
+		if (lower) {
+			((win_t*)row->data)->h       += dy;
+			((win_t*)lower->data)->h     -= dy;
+		}
+		if (right) {
+			((col_t*)col->data)->width   += dx;
+			((col_t*)right->data)->width -= dx;
+		}
+		arrange(wm_cols);
+	}
+
+	/* Floating */
+	//win_t *mwin = move_win;
+	//int dx = ptr.rx - move_prev.rx;
+	//int dy = ptr.ry - move_prev.ry;
+	//move_prev = ptr;
+	//if (move_mode == move)
+	//	sys_move(mwin, mwin->x+dx, mwin->y+dy, mwin->w, mwin->h);
+	//else if (move_mode == resize)
+	//	sys_move(mwin, mwin->x, mwin->y, mwin->w+dx, mwin->h+dy);
+
 	return 0;
 }
 
