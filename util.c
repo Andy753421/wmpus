@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #include "util.h"
 
@@ -46,4 +47,17 @@ int list_length(list_t *node)
 
 void list_move(list_t *node, int offset)
 {
+}
+
+/* Misc */
+int error(char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	fprintf(stderr, "Error: ");
+	vfprintf(stderr, fmt, ap);
+	fprintf(stderr, "\n");
+	va_end(ap);
+	exit(1);
+	return 0;
 }

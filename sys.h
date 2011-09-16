@@ -29,6 +29,7 @@ typedef enum {
 	key_f5, key_f6,  key_f7,  key_f8,
 	key_f9, key_f10, key_f11, key_f12,
 	key_alt, key_ctrl, key_shift, key_win,
+	key_enter, key_leave, key_focus, key_unfocus,
 } Key_t;
 
 typedef struct {
@@ -46,6 +47,7 @@ typedef struct {
 	int  x,  y;
 	int rx, ry;
 } ptr_t;
+#define PTR(...) ((ptr_t){__VA_ARGS__})
 
 void sys_watch(win_t *win, Key_t key, mod_t mod);
 

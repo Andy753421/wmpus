@@ -201,6 +201,10 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	else if (key == key_mouse3 && mod.MODKEY)
 		return set_mode(resize,win,ptr), 1;
 
+	/* Focus change */
+	if (key == key_enter)
+		sys_focus(win);
+
 	return 0;
 }
 
@@ -225,6 +229,9 @@ void wm_insert(win_t *win)
 {
 	printf("wm_insert: %p\n", win);
 	print_txt(wm_cols);
+
+	/* Watch enter/leave */
+	sys_watch(win, key_enter, MOD());
 
 	/* Add to screen */
 	col_t *col = wm_cols->data;
@@ -260,6 +267,7 @@ void wm_init(win_t *root)
 	sys_watch(root, key_f1,     MOD(.MODKEY=1));
 	sys_watch(root, key_mouse1, MOD(.MODKEY=1));
 	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
+	sys_watch(root, key_enter,  MOD());
 	key_t keys[] = {'h', 'j', 'k', 'l'};
 	for (int i = 0; i < countof(keys); i++) {
 		sys_watch(root, keys[i], MOD(.MODKEY=1));
