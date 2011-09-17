@@ -11,7 +11,7 @@ list_t *list_insert(list_t *next, void *data)
 	node->next = next;
 	node->prev = next ? next->prev : NULL;
 	if (node->next) node->next->prev = node;
-	if (node->prev) node->next->next = node;
+	if (node->prev) node->prev->next = node;
 	return node;
 }
 
