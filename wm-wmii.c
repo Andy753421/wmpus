@@ -292,7 +292,7 @@ void wm_init(win_t *root)
 	sys_watch(root, key_mouse1, MOD(.MODKEY=1));
 	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
 	sys_watch(root, key_enter,  MOD());
-	key_t keys[] = {'h', 'j', 'k', 'l'};
+	Key_t keys[] = {'h', 'j', 'k', 'l'};
 	for (int i = 0; i < countof(keys); i++) {
 		sys_watch(root, keys[i], MOD(.MODKEY=1));
 		sys_watch(root, keys[i], MOD(.MODKEY=1,.shift=1));

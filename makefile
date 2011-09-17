@@ -11,6 +11,7 @@ ifdef WIN32
 SYS=win32
 CC=i686-pc-mingw32-gcc
 CFLAGS=-g -Wall
+LIBS=
 PROG=awm.exe
 TEST=wine
 endif
