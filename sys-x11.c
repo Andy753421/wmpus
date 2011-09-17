@@ -317,16 +317,19 @@ void sys_focus(win_t *win)
 void sys_watch(win_t *win, Key_t key, mod_t mod)
 {
 	//printf("sys_watch: %p - %x %hhx\n", win, key, mod);
+	XWindowAttributes attr;
+	XGetWindowAttributes(win->sys->dpy, win->sys->xid, &attr);
+	long mask = attr.your_event_mask;
 	if (key_mouse0 <= key && key <= key_mouse7)
 		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid, True,
 				mod.up ? ButtonReleaseMask : ButtonPressMask,
 				GrabModeAsync, GrabModeAsync, None, None);
 	else if (key == key_enter)
-		XSelectInput(win->sys->dpy, win->sys->xid, EnterWindowMask);
+		XSelectInput(win->sys->dpy, win->sys->xid, EnterWindowMask|mask);
 	else if (key == key_leave)
-		XSelectInput(win->sys->dpy, win->sys->xid, LeaveWindowMask);
+		XSelectInput(win->sys->dpy, win->sys->xid, LeaveWindowMask|mask);
 	else if (key == key_focus || key == key_unfocus)
-		XSelectInput(win->sys->dpy, win->sys->xid, FocusChangeMask);
+		XSelectInput(win->sys->dpy, win->sys->xid, FocusChangeMask|mask);
 	else
 		XGrabKey(win->sys->dpy, XKeysymToKeycode(win->sys->dpy, key2x(key)),
 				mod2x(mod), win->sys->xid, True, GrabModeAsync, GrabModeAsync);
@@ -343,7 +346,7 @@ win_t *sys_init(void)
 	atoms[wm_proto] = XInternAtom(dpy, "WM_PROTOCOLS",  False);
 	atoms[wm_focus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
-	//XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
+	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	return win_find(dpy, xid, 1);
 }
 

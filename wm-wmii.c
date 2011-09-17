@@ -5,7 +5,7 @@
 #include "sys.h"
 #include "wm.h"
 
-#define MODKEY ctrl
+#define MODKEY alt
 
 /* Loca types */
 struct win_wm {
