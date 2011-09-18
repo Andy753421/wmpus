@@ -304,6 +304,12 @@ static void process_event(int type, XEvent *ev, win_t *root)
 			.x     = cre->x,     .y      = cre->y,
 			.width = cre->width, .height = cre->height,
 		};
+		if ((win = win_find(dpy,ev->xmaprequest.window,1))) {
+			wc.x      = win->x;
+			wc.y      = win->y;
+			wc.width  = win->w;
+			wc.height = win->h;
+		}
 		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
 				type, (int)cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
