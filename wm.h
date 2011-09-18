@@ -7,3 +7,5 @@ int wm_handle_ptr(win_t *win, ptr_t ptr);
 void wm_insert(win_t *win);
 
 void wm_remove(win_t *win);
+
+void wm_update(void);

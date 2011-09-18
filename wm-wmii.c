@@ -86,8 +86,8 @@ static void arrange(list_t *cols)
 	int tx=0, ty=0; // Total x/y size
 	int mx=0, my=0; // Maximum x/y size (screen size)
 
-
 	/* Scale horizontally */
+	x  = wm_root->x;
 	mx = wm_root->w - (list_length(wm_cols)+1)*MARGIN;
 	for (list_t *lx = cols; lx; lx = lx->next)
 		tx += ((col_t*)lx->data)->width;
@@ -100,7 +100,7 @@ static void arrange(list_t *cols)
 		ty = 0;
 		for (list_t *ly = col->rows; ly; ly = ly->next)
 			ty += ((win_t*)ly->data)->h;
-		y = 0;
+		y  = wm_root->y;
 		my = wm_root->h - (list_length(col->rows)+1)*MARGIN;
 		for (list_t *ly = col->rows; ly; ly = ly->next) {
 			win_t *win = ly->data;
@@ -215,6 +215,11 @@ static void shift_focus(win_t *win, int col, int row)
 }
 
 /* Window management functions */
+void wm_update(void)
+{
+	arrange(wm_cols);
+}
+
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
 	if (!win || win == wm_root) return 0;

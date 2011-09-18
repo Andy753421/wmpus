@@ -4,6 +4,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
+#include <X11/Xatom.h>
 #include <X11/keysym.h>
 
 #include "util.h"
@@ -14,6 +15,9 @@
 struct win_sys {
 	Window   xid;
 	Display *dpy;
+	struct {
+		int left, right, top, bottom;
+	} strut;
 };
 
 typedef struct {
@@ -22,7 +26,7 @@ typedef struct {
 } keymap_t;
 
 typedef enum {
-	wm_proto, wm_focus, natoms
+	wm_proto, wm_focus, net_strut, natoms
 } atom_t;
 
 /* Global data */
@@ -103,6 +107,7 @@ static ptr_t x2ptr(XEvent *_ev)
 	XKeyEvent *ev = &_ev->xkey;
 	return (ptr_t){ev->x, ev->y, ev->x_root, ev->y_root};
 }
+
 static Window getfocus(win_t *root, XEvent *event)
 {
 	int revert;
@@ -114,6 +119,54 @@ static Window getfocus(win_t *root, XEvent *event)
 	if (focus == None)
 		focus = event->xkey.window;
 	return focus;
+}
+
+/* Helpers */
+static int add_strut(win_t *root, win_t *win)
+{
+	/* Get X11 strut data */
+	Atom ret_type;
+	int ret_size;
+	unsigned long ret_items, bytes_left;
+	unsigned char *xdata;
+	int status = XGetWindowProperty(win->sys->dpy, win->sys->xid,
+			atoms[net_strut], 0L, 4L, False, XA_CARDINAL,
+			&ret_type, &ret_size, &ret_items, &bytes_left, &xdata);
+	if (status != Success || ret_size != 32 || ret_items != 4)
+		return 0;
+
+	int left   = ((int*)xdata)[0];
+	int right  = ((int*)xdata)[1];
+	int top    = ((int*)xdata)[2];
+	int bottom = ((int*)xdata)[3];
+	if (left == 0 && right == 0 && top == 0 && bottom == 0)
+		return 0;
+
+	win->sys->strut.left   = left;
+	win->sys->strut.right  = right;
+	win->sys->strut.top    = top;
+	win->sys->strut.bottom = bottom;
+	root->x += left;
+	root->y += top;
+	root->w -= left+right;
+	root->h -= top+bottom;
+	return 1;
+}
+
+static int del_strut(win_t *root, win_t *win)
+{
+	int left   = win->sys->strut.left;
+	int right  = win->sys->strut.right;
+	int top    = win->sys->strut.top;
+	int bottom = win->sys->strut.bottom;
+	if (left == 0 && right == 0 && top == 0 && bottom == 0)
+		return 0;
+
+	root->x -= left;
+	root->y -= top;
+	root->w += left+right;
+	root->h += top+bottom;
+	return 1;
 }
 
 /* Window functions */
@@ -237,8 +290,11 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	}
 	else if (type == UnmapNotify) {
 		//printf("unmap: %d\n", type);
-		if ((win = win_find(dpy,ev->xmap.window,0))) {
-			wm_remove(win);
+		if ((win = win_find(dpy,ev->xunmap.window,0))) {
+			if (!del_strut(root, win))
+				wm_remove(win);
+			else
+				wm_update();
 			win_remove(win);
 		}
 	}
@@ -255,8 +311,12 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	}
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
-		if ((win = win_find(dpy,ev->xmaprequest.window,1)))
-			wm_insert(win);
+		if ((win = win_find(dpy,ev->xmaprequest.window,1))) {
+			if (!add_strut(root, win))
+				wm_insert(win);
+			else
+				wm_update();
+		}
 		XMapWindow(dpy,ev->xmaprequest.window);
 	}
 	else {
@@ -351,8 +411,9 @@ win_t *sys_init(void)
 		error("Unable to get display");
 	if (!(xid = DefaultRootWindow(dpy)))
 		error("Unable to get root window");
-	atoms[wm_proto] = XInternAtom(dpy, "WM_PROTOCOLS",  False);
-	atoms[wm_focus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
+	atoms[wm_proto]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
+	atoms[wm_focus]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
+	atoms[net_strut] = XInternAtom(dpy, "_NET_WM_STRUT", False);
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	xerrorxlib = XSetErrorHandler(xerror);
@@ -368,9 +429,10 @@ void sys_run(win_t *root)
 				&par, &xid, &kids, &nkids))
 		for(int i = 0; i < nkids; i++) {
 			win_t *win = win_find(root->sys->dpy, kids[i], 1);
-			if (win && win_viewable(win))
+			if (win && win_viewable(win) && !add_strut(root,win))
 				wm_insert(win);
 		}
+	wm_update(); // For struts
 
 	/* Main loop */
 	for(;;)
