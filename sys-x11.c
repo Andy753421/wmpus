@@ -258,9 +258,18 @@ static void process_event(int type, XEvent *ev, win_t *root)
 		//printf("release: %d\n", type);
 	}
 	else if (type == ButtonPress) {
-		wm_handle_key(win, x2btn(ev->xbutton.button), mod, ptr);
-		XGrabPointer(dpy, ev->xbutton.root, True, PointerMotionMask|ButtonReleaseMask,
-				GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+		if (wm_handle_key(win, x2btn(ev->xbutton.button), mod, ptr))
+			XGrabPointer(dpy, ev->xbutton.root, True, PointerMotionMask|ButtonReleaseMask,
+					GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+		else {
+			printf("resending event\n");
+			XSendEvent(win->sys->dpy, ev->xbutton.window,    True,  NoEventMask, ev);
+			XSendEvent(win->sys->dpy, ev->xbutton.window,    False, NoEventMask, ev);
+			XSendEvent(win->sys->dpy, ev->xbutton.root,      True,  NoEventMask, ev);
+			XSendEvent(win->sys->dpy, ev->xbutton.root,      False, NoEventMask, ev);
+			XSendEvent(win->sys->dpy, ev->xbutton.subwindow, True,  NoEventMask, ev);
+			XSendEvent(win->sys->dpy, ev->xbutton.subwindow, False, NoEventMask, ev);
+		}
 	}
 	else if (type == ButtonRelease) {
 		XUngrabPointer(dpy, CurrentTime);
@@ -392,7 +401,7 @@ void sys_watch(win_t *win, Key_t key, mod_t mod)
 	XGetWindowAttributes(win->sys->dpy, win->sys->xid, &attr);
 	long mask = attr.your_event_mask;
 	if (key_mouse0 <= key && key <= key_mouse7)
-		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid, True,
+		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid, False,
 				mod.up ? ButtonReleaseMask : ButtonPressMask,
 				GrabModeAsync, GrabModeAsync, None, None);
 	else if (key == key_enter)
@@ -404,6 +413,12 @@ void sys_watch(win_t *win, Key_t key, mod_t mod)
 	else
 		XGrabKey(win->sys->dpy, XKeysymToKeycode(win->sys->dpy, key2x(key)),
 				mod2x(mod), win->sys->xid, True, GrabModeAsync, GrabModeAsync);
+}
+
+void sys_unwatch(win_t *win, Key_t key, mod_t mod)
+{
+	if (key_mouse0 <= key && key <= key_mouse7)
+		XUngrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid);
 }
 
 win_t *sys_init(void)

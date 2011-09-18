@@ -51,6 +51,8 @@ typedef struct {
 
 void sys_watch(win_t *win, Key_t key, mod_t mod);
 
+void sys_unwatch(win_t *win, Key_t key, mod_t mod);
+
 void sys_move(win_t *win, int x, int y, int w, int h);
 
 void sys_raise(win_t *win);

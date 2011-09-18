@@ -61,6 +61,17 @@ static void set_focus(win_t *win)
 {
 	if (win->wm && win->wm->col)
 		((col_t*)win->wm->col->data)->focus = win;
+
+	/* - Only grab mouse button on unfocused window,
+	 *   this prevents stealing all mouse clicks from client windows,
+	 * - A better way may be to re-send mouse clicks to client windows
+	 *   using the return value from wm_handle_key */
+	for (int i = key_mouse1; i < key_mouse7; i++) {
+		if (wm_focus)
+			sys_watch(wm_focus, i, MOD());
+		sys_unwatch(win, i, MOD());
+	}
+
 	wm_focus = win;
 	sys_focus(win);
 }
@@ -313,8 +324,11 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		return set_move(resize,win,ptr), 1;
 
 	/* Focus change */
-	if (key == key_enter || (key_mouse0 <= key && key <= key_mouse7))
-		set_focus(win);
+	if (key == key_enter)
+		return set_focus(win), 1;
+
+	if (key_mouse0 <= key && key <= key_mouse7)
+		return set_focus(win), 0;
 
 	/* Reset focus after after focus change,
 	 * not sure what is causing the focus change in the first place
@@ -417,6 +431,4 @@ void wm_init(win_t *root)
 		sys_watch(root, keys_m[i], MOD(.MODKEY=1));
 	for (int i = 0; i < countof(keys_s); i++)
 		sys_watch(root, keys_s[i], MOD(.MODKEY=1,.shift=1));
-	for (int i = key_mouse1; i < key_mouse7; i++)
-		sys_watch(root, i, MOD());
 }
