@@ -7,6 +7,7 @@
 
 #define MODKEY alt
 #define MARGIN 10
+#define STACK  20
 
 /* Loca types */
 struct win_wm {
@@ -19,12 +20,12 @@ typedef enum {
 } drag_t;
 
 typedef enum {
-	stack, split, max, tab
-} group_t;
+	split, stack, max, tab
+} mode_t;
 
 typedef struct {
 	int     width;
-	group_t group;
+	mode_t  mode;
 	win_t  *focus;
 	list_t *rows;
 } col_t;
@@ -40,6 +41,22 @@ static list_t *wm_cols;
 static win_t  *wm_root;
 
 /* Helper functions */
+static void set_mode(win_t *win, mode_t mode)
+{
+	if (!win->wm || !win->wm->col)
+		return;
+	col_t *col = win->wm->col->data;
+	printf("set_mode: %p (%p), %d -> %d\n",
+			win, col, col->mode, mode);
+	col->mode = mode;
+	if (col->mode == split)
+		for (list_t *cur = col->rows; cur; cur = cur->next) {
+			win_t *row = cur->data;
+			row->h = wm_root->h;
+		}
+	wm_update();
+}
+
 static void set_focus(win_t *win)
 {
 	if (win->wm && win->wm->col)
@@ -48,9 +65,9 @@ static void set_focus(win_t *win)
 	sys_focus(win);
 }
 
-static void set_mode(drag_t drag, win_t *win, ptr_t ptr)
+static void set_move(drag_t drag, win_t *win, ptr_t ptr)
 {
-	printf("set_mode: %d - %p@%d,%d\n",
+	printf("set_move: %d - %p@%d,%d\n",
 			drag, win, ptr.rx, ptr.ry);
 	move_mode = drag;
 	if (drag == move || drag == resize) {
@@ -67,7 +84,7 @@ static void print_txt(list_t *cols)
 				( lcol->prev ? lcol->prev->data : NULL ),
 				col,
 				( lcol->next ? lcol->next->data : NULL ),
-				col->width, col->group, col->focus);
+				col->width, col->mode, col->focus);
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 			win_t *win = lrow->data;
 			printf("  win:\t^%-9p <%-9p [%p=%p] >%-9p  -  %4dpx focus=%d%d\n",
@@ -77,39 +94,6 @@ static void print_txt(list_t *cols)
 					(win->wm->row->next ? win->wm->row->next->data : NULL),
 					win->h, col->focus == win, wm_focus == win);
 		}
-	}
-}
-
-static void arrange(list_t *cols)
-{
-	int  x=0,  y=0; // Current window top-left position
-	int tx=0, ty=0; // Total x/y size
-	int mx=0, my=0; // Maximum x/y size (screen size)
-
-	/* Scale horizontally */
-	x  = wm_root->x;
-	mx = wm_root->w - (list_length(wm_cols)+1)*MARGIN;
-	for (list_t *lx = cols; lx; lx = lx->next)
-		tx += ((col_t*)lx->data)->width;
-	for (list_t *lx = cols; lx; lx = lx->next)
-		((col_t*)lx->data)->width *= (float)mx / tx;
-
-	/* Scale each column vertically */
-	for (list_t *lx = cols; lx; lx = lx->next) {
-		col_t *col = lx->data;
-		ty = 0;
-		for (list_t *ly = col->rows; ly; ly = ly->next)
-			ty += ((win_t*)ly->data)->h;
-		y  = wm_root->y;
-		my = wm_root->h - (list_length(col->rows)+1)*MARGIN;
-		for (list_t *ly = col->rows; ly; ly = ly->next) {
-			win_t *win = ly->data;
-			sys_move(win, x+MARGIN, y+MARGIN,
-				col->width,
-				win->h * ((float)my / ty));
-			y += win->h + MARGIN;
-		}
-		x += col->width + MARGIN;
 	}
 }
 
@@ -171,7 +155,7 @@ static void shift_window(win_t *win, int col, int row)
 			dst->data = win;
 			((win_t*)src->data)->wm->row = src;
 			((win_t*)dst->data)->wm->row = dst;
-			arrange(wm_cols);
+			wm_update();
 		}
 	} else {
 		int onlyrow = !win->wm->row->prev && !win->wm->row->next;
@@ -189,7 +173,7 @@ static void shift_window(win_t *win, int col, int row)
 		if (src && dst) {
 			cut_window(win);
 			put_window(win, dst);
-			arrange(wm_cols);
+			wm_update();
 		}
 	}
 	print_txt(wm_cols);
@@ -199,9 +183,12 @@ static void shift_focus(win_t *win, int col, int row)
 {
 	printf("shift_focus: %p - %+d,%+d\n", win, col, row);
 	list_t *node  = NULL;
+	int update = 0;
 	if (row != 0) {
 		if (row < 0) node = win->wm->row->prev;
 		if (row > 0) node = win->wm->row->next;
+		if (((col_t*)win->wm->col->data)->mode != split)
+			update = 1;
 	} else {
 		if (col < 0) node = win->wm->col->prev;
 		if (col > 0) node = win->wm->col->next;
@@ -212,12 +199,61 @@ static void shift_focus(win_t *win, int col, int row)
 	}
 	if (node)
 		set_focus(node->data);
+	if (update)
+		wm_update();
 }
 
 /* Window management functions */
 void wm_update(void)
 {
-	arrange(wm_cols);
+	int  x=0,  y=0; // Current window top-left position
+	int tx=0, ty=0; // Total x/y size
+	int mx=0, my=0; // Maximum x/y size (screen size)
+	int       sy=0; // Size of focused stack window
+
+	/* Scale horizontally */
+	x  = wm_root->x;
+	mx = wm_root->w - (list_length(wm_cols)+1)*MARGIN;
+	for (list_t *lx = wm_cols; lx; lx = lx->next)
+		tx += ((col_t*)lx->data)->width;
+	for (list_t *lx = wm_cols; lx; lx = lx->next)
+		((col_t*)lx->data)->width *= (float)mx / tx;
+
+	/* Scale each column vertically */
+	for (list_t *lx = wm_cols; lx; lx = lx->next) {
+		col_t *col = lx->data;
+		ty = 0;
+		for (list_t *ly = col->rows; ly; ly = ly->next)
+			ty += ((win_t*)ly->data)->h;
+		y  = wm_root->y;
+		my = wm_root->h - (list_length(col->rows)+1)*MARGIN;
+		sy = my         - (list_length(col->rows)-1)*STACK;
+		for (list_t *ly = col->rows; ly; ly = ly->next) {
+			win_t *win = ly->data;
+			int height = 0;
+			switch (col->mode) {
+			case split:
+				sys_move(win, x+MARGIN, y+MARGIN,
+					col->width, win->h * ((float)my / ty));
+				height = win->h;
+				break;
+			case stack:
+				height = col->focus == win ? sy : STACK;
+				sys_move(win, x+MARGIN, y+MARGIN,
+					col->width, height);
+				break;
+			case max:
+			case tab:
+				sys_move(win, x+MARGIN, 0+MARGIN,
+					col->width, wm_root->h-2*MARGIN);
+				if (col->focus == win)
+					sys_raise(win);
+				break;
+			}
+			y += height + MARGIN;
+		}
+		x += col->width + MARGIN;
+	}
 }
 
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
@@ -237,7 +273,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	if (key_mouse0 <= key && key <= key_mouse7)
 		sys_raise(win);
 
-	/* Key commands */
+	/* Movement commands */
 	if (mod.MODKEY && mod.shift) {
 		switch (key) {
 		case 'h': return shift_window(win,-1, 0), 1;
@@ -257,16 +293,27 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		}
 	}
 
+	/* Column mode commands */
+	if (mod.MODKEY) {
+		switch (key) {
+		case 'd': return set_mode(win, split), 1;
+		case 's': return set_mode(win, stack), 1;
+		case 'm': return set_mode(win, max),   1;
+		case 't': return set_mode(win, tab),   1;
+		default: break;
+		}
+	}
+
 	/* Mouse movement */
 	if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
-		return set_mode(none,win,ptr), 1;
+		return set_move(none,win,ptr), 1;
 	else if (key == key_mouse1 && mod.MODKEY)
-		return set_mode(move,win,ptr), 1;
+		return set_move(move,win,ptr), 1;
 	else if (key == key_mouse3 && mod.MODKEY)
-		return set_mode(resize,win,ptr), 1;
+		return set_move(resize,win,ptr), 1;
 
 	/* Focus change */
-	if (key == key_enter)
+	if (key == key_enter || (key_mouse0 <= key && key <= key_mouse7))
 		set_focus(win);
 
 	/* Reset focus after after focus change,
@@ -303,7 +350,7 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 			((col_t*)col->data)->width   += dx;
 			((col_t*)right->data)->width -= dx;
 		}
-		arrange(wm_cols);
+		wm_update();
 	}
 
 	/* Floating */
@@ -335,7 +382,7 @@ void wm_insert(win_t *win)
 	put_window(win, lcol);
 
 	/* Arrange */
-	arrange(wm_cols);
+	wm_update();
 	sys_focus(wm_focus);
 	print_txt(wm_cols);
 }
@@ -350,7 +397,7 @@ void wm_remove(win_t *win)
 		sys_focus(wm_focus);
 	else
 		sys_focus(wm_root);
-	arrange(wm_cols);
+	wm_update();
 	print_txt(wm_cols);
 }
 
@@ -364,9 +411,12 @@ void wm_init(win_t *root)
 	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
 	sys_watch(root, key_enter,  MOD());
 	sys_watch(root, key_focus,  MOD());
-	Key_t keys[] = {'h', 'j', 'k', 'l'};
-	for (int i = 0; i < countof(keys); i++) {
-		sys_watch(root, keys[i], MOD(.MODKEY=1));
-		sys_watch(root, keys[i], MOD(.MODKEY=1,.shift=1));
-	}
+	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't'};
+	Key_t keys_s[] = {'h', 'j', 'k', 'l'};
+	for (int i = 0; i < countof(keys_m); i++)
+		sys_watch(root, keys_m[i], MOD(.MODKEY=1));
+	for (int i = 0; i < countof(keys_s); i++)
+		sys_watch(root, keys_s[i], MOD(.MODKEY=1,.shift=1));
+	for (int i = key_mouse1; i < key_mouse7; i++)
+		sys_watch(root, i, MOD());
 }
