@@ -300,20 +300,20 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	}
 	else if (type == ConfigureRequest) {
 		XConfigureRequestEvent *cre = &ev->xconfigurerequest;
-		XWindowChanges wc = {
-			.x     = cre->x,     .y      = cre->y,
-			.width = cre->width, .height = cre->height,
-		};
-		if ((win = win_find(dpy,ev->xmaprequest.window,1))) {
-			wc.x      = win->x;
-			wc.y      = win->y;
-			wc.width  = win->w;
-			wc.height = win->h;
-		}
 		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
 				type, (int)cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
-		XConfigureWindow(dpy, cre->window, cre->value_mask, &wc);
+		XConfigureWindow(dpy, cre->window, cre->value_mask, &(XWindowChanges){
+			.x      = cre->x,
+			.y      = cre->y,
+			.width  = cre->width,
+			.height = cre->height,
+		});
+
+		/* This seems necessasairy for, but causes flicker
+		 * there could be a better way to do this */
+		if ((win = win_find(dpy,ev->xmaprequest.window,0)))
+			sys_move(win, win->x, win->y, win->w, win->h);
 	}
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
@@ -373,19 +373,16 @@ void sys_raise(win_t *win)
 void sys_focus(win_t *win)
 {
 	printf("sys_focus: %p\n", win);
-	XEvent ev = {
+	XSetInputFocus(win->sys->dpy, win->sys->xid,
+			RevertToPointerRoot, CurrentTime);
+	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &(XEvent){
 		.type                 = ClientMessage,
 		.xclient.window       = win->sys->xid,
 		.xclient.message_type = atoms[wm_proto],
 		.xclient.format       = 32,
 		.xclient.data.l[0]    = atoms[wm_focus],
 		.xclient.data.l[1]    = CurrentTime,
-	};
-	XSetInputFocus(win->sys->dpy, win->sys->xid,
-			RevertToPointerRoot, CurrentTime);
-	//XSetInputFocus(win->sys->dpy, PointerRoot,
-	//		RevertToPointerRoot, CurrentTime);
-	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &ev);
+	});
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)
