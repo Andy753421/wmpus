@@ -264,11 +264,6 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	}
 }
 
-static int xwmerror(Display *dpy, XErrorEvent *err)
-{
-	return error("another window manager is running?");
-}
-
 static int xerror(Display *dpy, XErrorEvent *err)
 {
 	if (err->error_code == BadWindow ||
@@ -290,9 +285,10 @@ static int xerror(Display *dpy, XErrorEvent *err)
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	//printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	win->x = x; win->y = y;
-	win->w = w; win->h = h;
-	XMoveResizeWindow(win->sys->dpy, win->sys->xid, x, y, w, h);
+	win->x = MAX(x,0); win->y = MAX(y,0);
+	win->w = MAX(w,1); win->h = MAX(h,1);
+	XMoveResizeWindow(win->sys->dpy, win->sys->xid,
+			win->x, win->y, win->w, win-h);
 
 	/* Flush events, so moving window doesn't cuase re-focus
 	 * There's probably a better way to do this */

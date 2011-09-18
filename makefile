@@ -3,14 +3,14 @@ WM=wmii
 SYS=x11
 CC=gcc
 PROG=awm
-CFLAGS=-g -Wall -Os
+CFLAGS=-g -Werror -Wall
 LIBS=-Wl,--as-needed -lX11
 TEST=DISPLAY=:2.0
 
 ifdef WIN32
 SYS=win32
 CC=i686-pc-mingw32-gcc
-CFLAGS=-g -Wall
+CFLAGS=-g -Werror -Wall
 LIBS=
 PROG=awm.exe
 TEST=wine
