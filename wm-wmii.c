@@ -6,6 +6,7 @@
 #include "wm.h"
 
 #define MODKEY alt
+#define MARGIN 5
 
 /* Loca types */
 struct win_wm {
@@ -84,9 +85,10 @@ static void arrange(list_t *cols)
 		y = 0;
 		for (list_t *ly = col->rows; ly; ly = ly->next) {
 			win_t *win = ly->data;
-			sys_move(win, x, y, col->width,
-				win->h * ((float)my / ty));
-			y += win->h;
+			sys_move(win, x+MARGIN, y+MARGIN,
+				col->width - MARGIN*2,
+				win->h * ((float)my / ty) - MARGIN*2);
+			y += win->h + MARGIN*2;
 		}
 		x += col->width;
 	}
