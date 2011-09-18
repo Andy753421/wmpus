@@ -61,12 +61,16 @@ static void set_mode(drag_t drag, win_t *win, ptr_t ptr)
 
 static void print_txt(list_t *cols)
 {
-	for (list_t *cnode = cols; cnode; cnode = cnode->next) {
-		col_t *col = cnode->data;
-		printf("col:\t%p - %dpx @ %d !!%p\n", col, col->width, col->group, col->focus);
-		for (list_t *wnode = col->rows; wnode; wnode = wnode->next) {
-			win_t *win = wnode->data;
-			printf("  win:\t^%-9p <%-9p [%p=%p] >%-9p %4dpx focus=%d%d\n",
+	for (list_t *lcol = cols; lcol; lcol = lcol->next) {
+		col_t *col = lcol->data;
+		printf("col:\t           <%-9p [%-19p] >%-9p  -  %dpx @ %d !!%p\n",
+				( lcol->prev ? lcol->prev->data : NULL ),
+				col,
+				( lcol->next ? lcol->next->data : NULL ),
+				col->width, col->group, col->focus);
+		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
+			win_t *win = lrow->data;
+			printf("  win:\t^%-9p <%-9p [%p=%p] >%-9p  -  %4dpx focus=%d%d\n",
 					win->wm->col->data,
 					(win->wm->row->prev ? win->wm->row->prev->data : NULL),
 					win->wm->row->data, win,
@@ -123,12 +127,15 @@ static void cut_window(win_t *win)
 	             lcol->next ? ((col_t*)lcol->next->data)->focus : NULL;
 
 	col->rows  = list_remove(col->rows, lrow);
-	if (col->rows == NULL)
+	if (col->rows == NULL && (lcol->next || lcol->prev))
 		wm_cols = list_remove(wm_cols, lcol);
 }
 
 static void put_window(win_t *win, list_t *lcol)
 {
+	if (lcol == NULL)
+		lcol = wm_cols = list_insert(wm_cols, new0(col_t));
+
 	col_t *col = lcol->data;
 	int nrows = list_length(col->rows);
 	if (col->focus) {
@@ -306,21 +313,14 @@ void wm_insert(win_t *win)
 	printf("wm_insert: %p\n", win);
 	print_txt(wm_cols);
 
-	/* Watch enter/leave */
+	/* Initialize window */
+	win->wm = new0(win_wm_t);
 	sys_watch(win, key_enter, MOD());
 
 	/* Add to screen */
-	col_t *col = wm_cols->data;
-	//col_t *col = wm_focus && wm_focus->wm ?
-	//	wm_focus->wm->col->data : wm_cols->data;
-	int nrows = list_length(col->rows);
-	col->rows = list_insert(col->rows, win);
-
-	/* Setup window */
-	win->wm = new0(win_wm_t);
-	win->wm->col = wm_cols;
-	win->wm->row = col->rows;
-	if (nrows) win->h = wm_root->h / nrows;
+	list_t *lcol = wm_focus && wm_focus->wm ?
+		wm_focus->wm->col : wm_cols;
+	put_window(win, lcol);
 
 	/* Arrange */
 	arrange(wm_cols);
@@ -335,6 +335,8 @@ void wm_remove(win_t *win)
 	cut_window(win);
 	if (wm_focus)
 		sys_focus(wm_focus);
+	else
+		sys_focus(wm_root);
 	arrange(wm_cols);
 	print_txt(wm_cols);
 }
@@ -353,8 +355,4 @@ void wm_init(win_t *root)
 		sys_watch(root, keys[i], MOD(.MODKEY=1));
 		sys_watch(root, keys[i], MOD(.MODKEY=1,.shift=1));
 	}
-	col_t *col = new0(col_t);
-	col->group = stack;
-	col->width = root->w;
-	wm_cols = list_insert(wm_cols, col);
 }
