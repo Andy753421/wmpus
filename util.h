@@ -32,7 +32,5 @@ list_t *list_remove(list_t *head, list_t *item);
 
 int list_length(list_t *item);
 
-void list_move(list_t *item, int offset);
-
 /* Misc */
 int error(char *fmt, ...);

@@ -25,13 +25,13 @@ typedef enum {
 	wm_proto, wm_focus, natoms
 } atom_t;
 
-Atom atoms[natoms];
-
 /* Global data */
-void *win_cache = NULL;
+static void *win_cache = NULL;
+static Atom atoms[natoms];
+static int (*xerrorxlib)(Display *, XErrorEvent *);
 
 /* Conversion functions */
-keymap_t key2sym[] = {
+static keymap_t key2sym[] = {
 	{key_left    , XK_Left },
 	{key_right   , XK_Right},
 	{key_up      , XK_Up   },
@@ -55,7 +55,7 @@ keymap_t key2sym[] = {
 };
 
 /* - Modifiers */
-mod_t x2mod(unsigned int state, int up)
+static mod_t x2mod(unsigned int state, int up)
 {
 	return (mod_t){
 	       .alt   = !!(state & Mod1Mask   ),
@@ -66,7 +66,7 @@ mod_t x2mod(unsigned int state, int up)
 	};
 }
 
-unsigned int mod2x(mod_t mod)
+static unsigned int mod2x(mod_t mod)
 {
 	return (mod.alt   ? Mod1Mask    : 0)
 	     | (mod.ctrl  ? ControlMask : 0)
@@ -75,35 +75,35 @@ unsigned int mod2x(mod_t mod)
 }
 
 /* - Keycodes */
-Key_t x2key(KeySym sym)
+static Key_t x2key(KeySym sym)
 {
 	keymap_t *km = map_getr(key2sym,sym);
 	return km ? km->key : sym;
 }
 
-KeySym key2x(Key_t key)
+static KeySym key2x(Key_t key)
 {
 	keymap_t *km = map_get(key2sym,key);
 	return km ? km->sym : key;
 }
 
-Key_t x2btn(int btn)
+static Key_t x2btn(int btn)
 {
 	return btn + key_mouse0;
 }
 
-int btn2x(Key_t key)
+static int btn2x(Key_t key)
 {
 	return key - key_mouse0;
 }
 
 /* - Pointers */
-ptr_t x2ptr(XEvent *_ev)
+static ptr_t x2ptr(XEvent *_ev)
 {
 	XKeyEvent *ev = &_ev->xkey;
 	return (ptr_t){ev->x, ev->y, ev->x_root, ev->y_root};
 }
-Window getfocus(win_t *root, XEvent *event)
+static Window getfocus(win_t *root, XEvent *event)
 {
 	int revert;
 	Window focus = PointerRoot;
@@ -117,7 +117,7 @@ Window getfocus(win_t *root, XEvent *event)
 }
 
 /* Window functions */
-win_t *win_new(Display *dpy, Window xid)
+static win_t *win_new(Display *dpy, Window xid)
 {
 	XWindowAttributes attr;
 	if (XGetWindowAttributes(dpy, xid, &attr))
@@ -135,7 +135,7 @@ win_t *win_new(Display *dpy, Window xid)
 	return win;
 }
 
-int win_cmp(const void *_a, const void *_b)
+static int win_cmp(const void *_a, const void *_b)
 {
 	const win_t *a = _a, *b = _b;
 	if (a->sys->dpy < b->sys->dpy) return -1;
@@ -145,7 +145,7 @@ int win_cmp(const void *_a, const void *_b)
 	return 0;
 }
 
-win_t *win_find(Display *dpy, Window xid, int create)
+static win_t *win_find(Display *dpy, Window xid, int create)
 {
 	if (!dpy || !xid)
 		return NULL;
@@ -160,14 +160,14 @@ win_t *win_find(Display *dpy, Window xid, int create)
 	return new;
 }
 
-void win_remove(win_t *win)
+static void win_remove(win_t *win)
 {
 	tdelete(win, &win_cache, win_cmp);
 	free(win->sys);
 	free(win);
 }
 
-int win_viewable(win_t *win)
+static int win_viewable(win_t *win)
 {
 	XWindowAttributes attr;
 	if (XGetWindowAttributes(win->sys->dpy, win->sys->xid, &attr))
@@ -177,7 +177,7 @@ int win_viewable(win_t *win)
 }
 
 /* Callbacks */
-void process_event(int type, XEvent *ev, win_t *root)
+static void process_event(int type, XEvent *ev, win_t *root)
 {
 	Display  *dpy = root->sys->dpy;
 	win_t *win = NULL;
@@ -235,15 +235,12 @@ void process_event(int type, XEvent *ev, win_t *root)
 	else if (type == MapNotify) {
 		//printf("map: %d\n", type);
 	}
-	else if (type == DestroyNotify) {
-		//printf("destory: %d\n", type);
-		if ((win = win_find(dpy,ev->xdestroywindow.window,0)))
-			win_remove(win);
-	}
 	else if (type == UnmapNotify) {
 		//printf("unmap: %d\n", type);
-		if ((win = win_find(dpy,ev->xmap.window,0)))
+		if ((win = win_find(dpy,ev->xmap.window,0))) {
 			wm_remove(win);
+			win_remove(win);
+		}
 	}
 	else if (type == ConfigureRequest) {
 		XConfigureRequestEvent *cre = &ev->xconfigurerequest;
@@ -267,9 +264,24 @@ void process_event(int type, XEvent *ev, win_t *root)
 	}
 }
 
-int xwmerror(Display *dpy, XErrorEvent *err)
+static int xwmerror(Display *dpy, XErrorEvent *err)
 {
 	return error("another window manager is running?");
+}
+
+static int xerror(Display *dpy, XErrorEvent *err)
+{
+	if (err->error_code == BadWindow ||
+	    (err->request_code == X_SetInputFocus     && err->error_code == BadMatch   ) ||
+	    (err->request_code == X_PolyText8         && err->error_code == BadDrawable) ||
+	    (err->request_code == X_PolyFillRectangle && err->error_code == BadDrawable) ||
+	    (err->request_code == X_PolySegment       && err->error_code == BadDrawable) ||
+	    (err->request_code == X_ConfigureWindow   && err->error_code == BadMatch   ) ||
+	    (err->request_code == X_GrabButton        && err->error_code == BadAccess  ) ||
+	    (err->request_code == X_GrabKey           && err->error_code == BadAccess  ) ||
+	    (err->request_code == X_CopyArea          && err->error_code == BadDrawable))
+		return 0;
+	return xerrorxlib(dpy, err);
 }
 
 /*****************
@@ -347,6 +359,7 @@ win_t *sys_init(void)
 	atoms[wm_focus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
+	xerrorxlib = XSetErrorHandler(xerror);
 	return win_find(dpy, xid, 1);
 }
 

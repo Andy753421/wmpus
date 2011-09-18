@@ -45,10 +45,6 @@ int list_length(list_t *node)
 	return len;
 }
 
-void list_move(list_t *node, int offset)
-{
-}
-
 /* Misc */
 int error(char *fmt, ...)
 {

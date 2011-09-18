@@ -28,13 +28,13 @@ typedef struct {
 } col_t;
 
 /* Mouse drag data */
-drag_t move_mode;
-win_t *move_win;
-ptr_t  move_prev;
+static drag_t move_mode;
+static win_t *move_win;
+static ptr_t  move_prev;
 
 /* Window management data */
-list_t *wm_cols;
-win_t  *wm_root;
+static list_t *wm_cols;
+static win_t  *wm_root;
 
 /* Helper functions */
 static void set_mode(drag_t drag, win_t *win, ptr_t ptr)
