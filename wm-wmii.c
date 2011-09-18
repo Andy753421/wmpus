@@ -63,11 +63,15 @@ static void print_txt(list_t *cols)
 {
 	for (list_t *cnode = cols; cnode; cnode = cnode->next) {
 		col_t *col = cnode->data;
-		printf("col:\t%p - %dpx @ %d\n", col, col->width, col->group);
+		printf("col:\t%p - %dpx @ %d !!%p\n", col, col->width, col->group, col->focus);
 		for (list_t *wnode = col->rows; wnode; wnode = wnode->next) {
 			win_t *win = wnode->data;
-			printf("  win:\t%p - %4dpx  focus=%d%d\n", win, win->h,
-					col->focus == win, wm_focus == win);
+			printf("  win:\t^%-9p <%-9p [%p=%p] >%-9p %4dpx focus=%d%d\n",
+					win->wm->col->data,
+					(win->wm->row->prev ? win->wm->row->prev->data : NULL),
+					win->wm->row->data, win,
+					(win->wm->row->next ? win->wm->row->next->data : NULL),
+					win->h, col->focus == win, wm_focus == win);
 		}
 	}
 }
@@ -118,7 +122,7 @@ static void cut_window(win_t *win)
 	             lcol->prev ? ((col_t*)lcol->prev->data)->focus :
 	             lcol->next ? ((col_t*)lcol->next->data)->focus : NULL;
 
-	col->rows  = list_remove(col->rows, win->wm->row);
+	col->rows  = list_remove(col->rows, lrow);
 	if (col->rows == NULL)
 		wm_cols = list_remove(wm_cols, lcol);
 }
@@ -126,15 +130,20 @@ static void cut_window(win_t *win)
 static void put_window(win_t *win, list_t *lcol)
 {
 	col_t *col = lcol->data;
-	col->rows    = list_insert(col->rows, win);
-	win->wm->row = col->rows;
+	int nrows = list_length(col->rows);
+	if (col->focus) {
+		list_insert_after(col->focus->wm->row, win);
+		win->wm->row = col->focus->wm->row->next;
+	} else {
+		col->rows = list_insert(col->rows, win);
+		win->wm->row = col->rows;
+	}
 	win->wm->col = lcol;
 	col->focus   = win;
 	wm_focus     = win;
 
-	int nrows = list_length(col->rows);
-	win->h = wm_root->h / MAX(nrows-1,1);
-	if (nrows == 1) { // new column
+	win->h = wm_root->h / MAX(nrows,1);
+	if (nrows == 0) {
 		int ncols = list_length(wm_cols);
 		col->width = wm_root->w / MAX(ncols-1,1);
 	}
@@ -211,6 +220,8 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		return sys_raise(win), 1;
 	if (key == key_f1 && mod.MODKEY)
 		sys_raise(win);
+	if (key == key_f12 && mod.MODKEY)
+		print_txt(wm_cols);
 	if (key_mouse0 <= key && key <= key_mouse7)
 		sys_raise(win);
 
@@ -333,6 +344,7 @@ void wm_init(win_t *root)
 	printf("wm_init: %p\n", root);
 	wm_root = root;
 	sys_watch(root, key_f1,     MOD(.MODKEY=1));
+	sys_watch(root, key_f12,    MOD(.MODKEY=1));
 	sys_watch(root, key_mouse1, MOD(.MODKEY=1));
 	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
 	sys_watch(root, key_enter,  MOD());

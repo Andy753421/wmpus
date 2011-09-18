@@ -288,7 +288,7 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	win->x = MAX(x,0); win->y = MAX(y,0);
 	win->w = MAX(w,1); win->h = MAX(h,1);
 	XMoveResizeWindow(win->sys->dpy, win->sys->xid,
-			win->x, win->y, win->w, win-h);
+			win->x, win->y, win->w, win->h);
 
 	/* Flush events, so moving window doesn't cuase re-focus
 	 * There's probably a better way to do this */

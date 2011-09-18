@@ -15,6 +15,18 @@ list_t *list_insert(list_t *next, void *data)
 	return node;
 }
 
+void list_insert_after(list_t *prev, void *data)
+{
+	// prev must be valid,
+	// as we cannot return the original list head
+	list_t *node = new0(list_t);
+	node->data = data;
+	node->prev = prev;
+	node->next = prev->next;
+	prev->next = node;
+	if (node->next) node->next->prev = node;
+}
+
 list_t *list_append(list_t *head, void *data)
 {
 	list_t *last = head;
