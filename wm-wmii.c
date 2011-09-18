@@ -5,7 +5,7 @@
 #include "sys.h"
 #include "wm.h"
 
-#define MODKEY ctrl
+#define MODKEY alt
 #define MARGIN 10
 
 /* Loca types */
@@ -264,6 +264,12 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	if (key == key_enter)
 		set_focus(win);
 
+	/* Reset focus after after focus change,
+	 * not sure what is causing the focus change in the first place
+	 * but preventing that would be a better solution */
+	if (key == key_focus)
+		set_focus(wm_focus);
+
 	return 0;
 }
 
@@ -316,6 +322,7 @@ void wm_insert(win_t *win)
 	/* Initialize window */
 	win->wm = new0(win_wm_t);
 	sys_watch(win, key_enter, MOD());
+	sys_watch(win, key_focus, MOD());
 
 	/* Add to screen */
 	list_t *lcol = wm_focus && wm_focus->wm ?
@@ -324,6 +331,7 @@ void wm_insert(win_t *win)
 
 	/* Arrange */
 	arrange(wm_cols);
+	sys_focus(wm_focus);
 	print_txt(wm_cols);
 }
 
@@ -350,6 +358,7 @@ void wm_init(win_t *root)
 	sys_watch(root, key_mouse1, MOD(.MODKEY=1));
 	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
 	sys_watch(root, key_enter,  MOD());
+	sys_watch(root, key_focus,  MOD());
 	Key_t keys[] = {'h', 'j', 'k', 'l'};
 	for (int i = 0; i < countof(keys); i++) {
 		sys_watch(root, keys[i], MOD(.MODKEY=1));

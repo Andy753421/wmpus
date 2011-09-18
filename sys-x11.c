@@ -230,10 +230,10 @@ static void process_event(int type, XEvent *ev, win_t *root)
 			wm_handle_key(win, key, MOD(), PTR());
 	}
 	else if (type == ConfigureNotify) {
-		//printf("configure: %d\n", type);
+		printf("configure: %d\n", type);
 	}
 	else if (type == MapNotify) {
-		//printf("map: %d\n", type);
+		printf("map: %d\n", type);
 	}
 	else if (type == UnmapNotify) {
 		//printf("unmap: %d\n", type);
