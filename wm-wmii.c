@@ -195,28 +195,26 @@ static void shift_window(win_t *win, int col, int row)
 	print_txt(wm_cols);
 }
 
+static list_t *get_next(list_t *list, int forward)
+{
+	list_t *next = forward ? list->next : list->prev;
+	if (next == NULL)
+		while ((list = forward ? list->prev : list->next))
+			next = list;
+	return next;
+}
 static void shift_focus(win_t *win, int col, int row)
 {
 	printf("shift_focus: %p - %+d,%+d\n", win, col, row);
-	list_t *node  = NULL;
-	int update = 0;
 	if (row != 0) {
-		if (row < 0) node = win->wm->row->prev;
-		if (row > 0) node = win->wm->row->next;
+		set_focus(get_next(win->wm->row, row > 0)->data);
 		if (((col_t*)win->wm->col->data)->mode != split)
-			update = 1;
-	} else {
-		if (col < 0) node = win->wm->col->prev;
-		if (col > 0) node = win->wm->col->next;
-		if (node) {
-			col_t *col = node->data;
-			node = col->focus->wm->row;
-		}
+			wm_update();
 	}
-	if (node)
-		set_focus(node->data);
-	if (update)
-		wm_update();
+	if (col != 0) {
+		col_t *next = get_next(win->wm->col, col > 0)->data;
+		set_focus(next->focus->wm->row->data);
+	}
 }
 
 /* Window management functions */
