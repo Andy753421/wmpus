@@ -6,8 +6,8 @@
 #include "wm.h"
 
 #define MODKEY alt
-#define MARGIN 10
-#define STACK  20
+#define MARGIN 0
+#define STACK  25
 
 /* Loca types */
 struct win_wm {

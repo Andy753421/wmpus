@@ -11,6 +11,8 @@
 #include "sys.h"
 #include "wm.h"
 
+#define BORDER 2
+
 /* Internal structures */
 struct win_sys {
 	Window   xid;
@@ -29,10 +31,15 @@ typedef enum {
 	wm_proto, wm_focus, net_strut, natoms
 } atom_t;
 
+typedef enum {
+	clr_focus, clr_unfocus, clr_urgent, ncolors
+} color_t;
+
 /* Global data */
 static void *win_cache = NULL;
 static Atom atoms[natoms];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
+static unsigned long colors[ncolors];
 
 /* Conversion functions */
 static keymap_t key2sym[] = {
@@ -229,6 +236,16 @@ static int win_viewable(win_t *win)
 		return True;
 }
 
+/* Drawing functions */
+unsigned long get_color(Display *dpy, const char *name)
+{
+	XColor color;
+	int screen = DefaultScreen(dpy);
+	Colormap cmap = DefaultColormap(dpy, screen);
+	XAllocNamedColor(dpy, cmap, name, &color, &color);
+	return color.pixel;
+}
+
 /* Callbacks */
 static void process_event(int type, XEvent *ev, win_t *root)
 {
@@ -360,10 +377,11 @@ static int xerror(Display *dpy, XErrorEvent *err)
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	//printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	win->x = MAX(x,0); win->y = MAX(y,0);
-	win->w = MAX(w,1); win->h = MAX(h,1);
-	XMoveResizeWindow(win->sys->dpy, win->sys->xid,
-			win->x, win->y, win->w, win->h);
+	int b = 2*BORDER;
+	win->x = MAX(x,0);   win->y = MAX(y,0);
+	win->w = MAX(w,1+b); win->h = MAX(h,1+b);
+	w      = MAX(w-b,1); h      = MAX(h-b,1);
+	XMoveResizeWindow(win->sys->dpy, win->sys->xid, x, y, w, h);
 
 	/* Flush events, so moving window doesn't cuase re-focus
 	 * There's probably a better way to do this */
@@ -382,6 +400,16 @@ void sys_raise(win_t *win)
 void sys_focus(win_t *win)
 {
 	printf("sys_focus: %p\n", win);
+
+	/* Set border on focused window */
+	static win_t *last = NULL;
+	if (last)
+		XSetWindowBorder(last->sys->dpy, last->sys->xid, colors[clr_unfocus]);
+	XSetWindowBorder(win->sys->dpy, win->sys->xid, colors[clr_focus]);
+	XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, BORDER);
+	last = win;
+
+	/* Set actual focus */
 	XSetInputFocus(win->sys->dpy, win->sys->xid,
 			RevertToPointerRoot, CurrentTime);
 	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &(XEvent){
@@ -432,6 +460,10 @@ win_t *sys_init(void)
 	atoms[wm_proto]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
 	atoms[wm_focus]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	atoms[net_strut] = XInternAtom(dpy, "_NET_WM_STRUT", False);
+	colors[clr_focus]   = get_color(dpy, "#a0a0ff");
+	colors[clr_unfocus] = get_color(dpy, "#101066");
+	colors[clr_urgent]  = get_color(dpy, "#ff0000");
+	printf("colors = #%06lx #%06lx #%06lx\n", colors[0], colors[1], colors[2]);
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	xerrorxlib = XSetErrorHandler(xerror);
