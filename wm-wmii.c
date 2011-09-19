@@ -34,6 +34,7 @@ typedef struct {
 static drag_t move_mode;
 static win_t *move_win;
 static ptr_t  move_prev;
+static struct { int v, h; } move_dir;
 
 /* Window management data */
 static win_t  *wm_focus;
@@ -76,7 +77,7 @@ static void set_focus(win_t *win)
 	sys_focus(win);
 }
 
-static void set_move(drag_t drag, win_t *win, ptr_t ptr)
+static void set_move(win_t *win, ptr_t ptr, drag_t drag)
 {
 	printf("set_move: %d - %p@%d,%d\n",
 			drag, win, ptr.rx, ptr.ry);
@@ -84,6 +85,10 @@ static void set_move(drag_t drag, win_t *win, ptr_t ptr)
 	if (drag == move || drag == resize) {
 		move_win  = win;
 		move_prev = ptr;
+		int my = win->y + (win->h/2);
+		int mx = win->x + (win->w/2);
+		move_dir.v = ptr.ry < my ? -1 : +1;
+		move_dir.h = ptr.rx < mx ? -1 : +1;
 	}
 }
 
@@ -317,11 +322,11 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 
 	/* Mouse movement */
 	if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
-		return set_move(none,win,ptr), 1;
+		return set_move(win,ptr,none), 1;
 	else if (key == key_mouse1 && mod.MODKEY)
-		return set_move(move,win,ptr), 1;
+		return set_move(win,ptr,move), 1;
 	else if (key == key_mouse3 && mod.MODKEY)
-		return set_move(resize,win,ptr), 1;
+		return set_move(win,ptr,resize), 1;
 
 	/* Focus change */
 	if (key == key_enter)
@@ -352,17 +357,17 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 	int dy = ptr.ry - move_prev.ry;
 	move_prev = ptr;
 	if (move_mode == resize) {
-		list_t *row   = move_win->wm->row;
-		list_t *col   = move_win->wm->col;
-		list_t *lower = row->next;
-		list_t *right = col->next;
-		if (lower) {
-			((win_t*)row->data)->h       += dy;
-			((win_t*)lower->data)->h     -= dy;
+		list_t *row  = move_win->wm->row;
+		list_t *col  = move_win->wm->col;
+		list_t *vert = move_dir.v < 0 ? row->prev : row->next;
+		list_t *horz = move_dir.h < 0 ? col->prev : col->next;
+		if (vert) {
+			((win_t*)row->data)->h      += move_dir.v * dy;
+			((win_t*)vert->data)->h     -= move_dir.v * dy;
 		}
-		if (right) {
-			((col_t*)col->data)->width   += dx;
-			((col_t*)right->data)->width -= dx;
+		if (horz) {
+			((col_t*)col->data)->width  += move_dir.h * dx;
+			((col_t*)horz->data)->width -= move_dir.h * dx;
 		}
 		wm_update();
 	}
