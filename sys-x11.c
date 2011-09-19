@@ -49,7 +49,9 @@ typedef struct {
 } event_map_t;
 
 typedef enum {
-	WM_PROTO, WM_FOCUS, NET_STRUT, NATOMS
+	WM_PROTO, WM_FOCUS,
+	NET_STATE, NET_FULL, NET_STRUT,
+	NATOMS
 } atom_t;
 
 typedef enum {
@@ -167,6 +169,10 @@ static int strut_copy(win_t *to, win_t *from, int scale)
 	to->y += scale*(top       );
 	to->w -= scale*(left+right);
 	to->h -= scale*(top+bottom);
+	to->sys->strut.left   += scale*left;
+	to->sys->strut.right  += scale*right;
+	to->sys->strut.top    += scale*top;
+	to->sys->strut.bottom += scale*bottom;
 	return 1;
 }
 
@@ -202,6 +208,28 @@ static int strut_del(win_t *root, win_t *win)
 		strut_copy(cur->data, win, -1);
 	return strut_copy(root, win, -1);
 }
+
+#if 0
+static int is_fullscreen(win_t *win)
+{
+	Atom ret_type;
+	int ret_size;
+	unsigned long ret_items, bytes_left;
+	unsigned char *xdata;
+	int status = XGetWindowProperty(win->sys->dpy, win->sys->xid,
+			atoms[NET_FULL], 0L, 1L, False, XA_ATOM,
+			&ret_type, &ret_size, &ret_items, &bytes_left, &xdata);
+	printf("is_fullscreen:\n");
+	printf("\t%d\n", status);
+	printf("\t%d\n", ret_size);
+	printf("\t%ld\n", ret_items);
+	printf("\t%p\n", xdata);
+	if (xdata)
+	printf("\t%d\n", xdata[0]);
+	return status == Success && ret_size == 32 && ret_items == 1 &&
+		xdata[0] == atoms[NET_FULL];
+}
+#endif
 
 /* Window functions */
 static win_t *win_new(Display *dpy, Window xid)
@@ -372,6 +400,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 				.xconfigure.y                 = win->y,
 				.xconfigure.width             = win->w,
 				.xconfigure.height            = win->h,
+				.xconfigure.border_width      = border,
 			});
 			XSync(win->sys->dpy, False);
 		}
@@ -379,12 +408,31 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
 		if ((win = win_find(dpy,xe->xmaprequest.window,1))) {
+			XSelectInput(win->sys->dpy, win->sys->xid, PropertyChangeMask);
 			if (!strut_add(root, win))
 				wm_insert(win);
 			else
 				wm_update();
 		}
 		XMapWindow(dpy, xe->xmaprequest.window);
+	}
+	else if (type == ClientMessage) {
+		printf("msg: %d\n", type);
+		XClientMessageEvent *cme = &xe->xclient;
+		if ((win = win_find(dpy,cme->window,0))     &&
+		    (cme->message_type == atoms[NET_STATE]) &&
+		    (cme->data.l[1] == atoms[NET_FULL] ||
+		     cme->data.l[2] == atoms[NET_FULL])) {
+			if (cme->data.l[0] == 1 || /* _NET_WM_STATE_ADD    */
+			   (cme->data.l[0] == 2 && /* _NET_WM_STATE_TOGGLE */
+			    win->sys->state != ST_FULL))
+				sys_show(win, ST_FULL);
+			else
+				sys_show(win, ST_SHOW);
+		}
+	}
+	else if (type == PropertyNotify) {
+		printf("prop: %d\n", type);
 	}
 	else {
 		printf("unknown event: %d\n", type);
@@ -439,15 +487,7 @@ void sys_raise(win_t *win)
 
 void sys_focus(win_t *win)
 {
-	//printf("sys_focus: %p\n", win);
-
-	/* Set border on focused window */
-	static win_t *last = NULL;
-	if (last)
-		XSetWindowBorder(last->sys->dpy, last->sys->xid, colors[CLR_UNFOCUS]);
-	XSetWindowBorder(win->sys->dpy, win->sys->xid, colors[CLR_FOCUS]);
-	XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
-	last = win;
+	printf("sys_focus: %p\n", win);
 
 	/* Set actual focus */
 	XSetInputFocus(win->sys->dpy, win->sys->xid,
@@ -460,37 +500,63 @@ void sys_focus(win_t *win)
 		.xclient.data.l[0]    = atoms[WM_FOCUS],
 		.xclient.data.l[1]    = CurrentTime,
 	});
+
+	/* Set border on focused window */
+	static win_t *last = NULL;
+	if (last)
+		XSetWindowBorder(last->sys->dpy, last->sys->xid, colors[CLR_UNFOCUS]);
+	XSync(win->sys->dpy, False);
+	XSetWindowBorder(win->sys->dpy, win->sys->xid, colors[CLR_FOCUS]);
+	last = win;
 }
 
 void sys_show(win_t *win, state_t state)
 {
-	win->sys->state = state;
+	/* Restore from fullscreen */
 	switch (state) {
 	case ST_SHOW:
 		printf("sys_show: show\n");
+		if (win->sys->state == ST_FULL)
+			sys_move(win, win->x, win->y, win->w, win->h);
+		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
 		XMapWindow(win->sys->dpy, win->sys->xid);
 		XSync(win->sys->dpy, False);
-		return;
+		break;
 	case ST_FULL:
 		printf("sys_show: full\n");
+		win_t *screen = NULL;
+		for (list_t *cur = screens; cur; cur = cur->next) {
+			screen = cur->data;
+			if (win->x >= screen->x && win->x <= screen->x+screen->w &&
+			    win->y >= screen->y && win->y <= screen->y+screen->h)
+				break;
+		}
+		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, 0);
 		XMapWindow(win->sys->dpy, win->sys->xid);
-		return;
+		XMoveResizeWindow(win->sys->dpy, win->sys->xid,
+			screen->x - screen->sys->strut.left,
+			screen->y - screen->sys->strut.top,
+			screen->w + screen->sys->strut.left + screen->sys->strut.right,
+			screen->h + screen->sys->strut.top  + screen->sys->strut.bottom);
+		XRaiseWindow(win->sys->dpy, win->sys->xid);
+		break;
 	case ST_SHADE:
 		printf("sys_show: shade\n");
 		XMapWindow(win->sys->dpy, win->sys->xid);
-		return;
+		break;
 	case ST_ICON:
 		printf("sys_show: icon\n");
-		return;
+		break;
 	case ST_HIDE:
 		printf("sys_show: hide\n");
 		XUnmapWindow(win->sys->dpy, win->sys->xid);
-		return;
+		break;
 	case ST_CLOSE:
 		printf("sys_show: close\n");
 		XDestroyWindow(win->sys->dpy, win->sys->xid);
-		return;
+		break;
 	}
+	win->sys->state = state;
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
@@ -535,6 +601,7 @@ list_t *sys_info(win_t *win)
 			screen->y = info[i].y_org;
 			screen->w = info[i].width;
 			screen->h = info[i].height;
+			screen->sys = new0(win_sys_t);
 			screens = list_append(screens, screen);
 		}
 	}
@@ -565,6 +632,8 @@ win_t *sys_init(void)
 	/* Setup X11 data */
 	atoms[WM_PROTO]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
 	atoms[WM_FOCUS]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
+	atoms[NET_STATE] = XInternAtom(dpy, "_NET_WM_STATE", False);
+	atoms[NET_FULL]  = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
 	atoms[NET_STRUT] = XInternAtom(dpy, "_NET_WM_STRUT", False);
 
 	colors[CLR_FOCUS]   = get_color(dpy, "#a0a0ff");
@@ -615,7 +684,9 @@ void sys_exit(void)
 void sys_free(win_t *root)
 {
 	XCloseDisplay(root->sys->dpy);
-	while (screens)
-		screens = list_remove(screens, screens, 1);
+	while (screens) {
+		win_free(screens->data);
+		screens = list_remove(screens, screens, 0);
+	}
 	tdestroy(cache, (void(*)(void*))win_free);
 }

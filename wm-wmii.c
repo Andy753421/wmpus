@@ -872,7 +872,7 @@ void wm_insert(win_t *win)
 
 	/* Arrange */
 	wm_update();
-	set_focus(wm_focus);
+	set_focus(win);
 	print_txt();
 }
 
