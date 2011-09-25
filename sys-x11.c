@@ -36,7 +36,7 @@ typedef enum {
 } color_t;
 
 /* Global data */
-static void *win_cache = NULL;
+static void *win_cache;
 static Atom atoms[natoms];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
 static unsigned long colors[ncolors];
@@ -191,7 +191,9 @@ static win_t *win_new(Display *dpy, Window xid)
 	win->sys      = new0(win_sys_t);
 	win->sys->dpy = dpy;
 	win->sys->xid = xid;
-	printf("%p = %p, %d\n", win, dpy, (int)xid);
+	printf("win_new: %p = %p, %d (%d,%d %dx%d)\n",
+			win, dpy, (int)xid,
+			win->x, win->y, win->w, win->h);
 	return win;
 }
 

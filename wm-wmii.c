@@ -273,17 +273,32 @@ void wm_update(void)
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
 	if (!win || win == wm_root) return 0;
-	//printf("wm_handle_key: %p - %x %x\n", win, key, mod);
+	//printf("wm_handle_key: %p - %x %c%c%c%c%c\n", win, key,
+	//	mod.up    ? '^' : 'v',
+	//	mod.alt   ? 'a' : '-',
+	//	mod.ctrl  ? 'c' : '-',
+	//	mod.shift ? 's' : '-',
+	//	mod.win   ? 'w' : '-');
 
-	/* Raise */
-	if (key == key_f2)
-		return set_focus(win), 1;
-	if (key == key_f4)
-		return sys_raise(win), 1;
-	if (key == key_f1 && mod.MODKEY)
-		sys_raise(win);
-	if (key == key_f12 && mod.MODKEY)
-		print_txt(wm_cols);
+	/* Mouse movement */
+	if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
+		return set_move(win,ptr,none), 1;
+	else if (key == key_mouse1 && mod.MODKEY)
+		return set_move(win,ptr,move), 1;
+	else if (key == key_mouse3 && mod.MODKEY)
+		return set_move(win,ptr,resize), 1;
+
+	/* Only handle key-down */
+	if (mod.up)
+		return 0;
+
+	/* Misc */
+	if (mod.MODKEY) {
+		if (key == key_f1) return sys_raise(win), 1;
+		if (key == key_f2) return set_focus(win), 1;
+		if (key == key_f5) return wm_update(),    1;
+		if (key == key_f6) return print_txt(wm_cols), 1;
+	}
 	if (key_mouse0 <= key && key <= key_mouse7)
 		sys_raise(win);
 
@@ -317,14 +332,6 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		default: break;
 		}
 	}
-
-	/* Mouse movement */
-	if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
-		return set_move(win,ptr,none), 1;
-	else if (key == key_mouse1 && mod.MODKEY)
-		return set_move(win,ptr,move), 1;
-	else if (key == key_mouse3 && mod.MODKEY)
-		return set_move(win,ptr,resize), 1;
 
 	/* Focus change */
 	if (key == key_enter)
@@ -422,14 +429,12 @@ void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);
 	wm_root = root;
-	sys_watch(root, key_f1,     MOD(.MODKEY=1));
-	sys_watch(root, key_f12,    MOD(.MODKEY=1));
-	sys_watch(root, key_mouse1, MOD(.MODKEY=1));
-	sys_watch(root, key_mouse3, MOD(.MODKEY=1));
-	sys_watch(root, key_enter,  MOD());
-	sys_watch(root, key_focus,  MOD());
-	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't'};
+	Key_t keys_e[] = {key_enter, key_focus};
 	Key_t keys_s[] = {'h', 'j', 'k', 'l'};
+	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't',
+		key_f1, key_f2, key_f5, key_f6, key_mouse1, key_mouse3};
+	for (int i = 0; i < countof(keys_e); i++)
+		sys_watch(root, keys_e[i],  MOD());
 	for (int i = 0; i < countof(keys_m); i++)
 		sys_watch(root, keys_m[i], MOD(.MODKEY=1));
 	for (int i = 0; i < countof(keys_s); i++)
