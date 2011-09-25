@@ -37,7 +37,7 @@ typedef struct {
 typedef struct {
 	list_t *cols; // of col_t
 	col_t  *col;
-	win_t  *root;
+	win_t  *geom;
 } dpy_t;
 
 typedef struct {
@@ -49,6 +49,8 @@ typedef struct {
 typedef struct {
 	list_t *tags; // of tag_t
 	tag_t  *tag;
+	win_t  *root;
+	list_t *screens;
 } wm_t;
 
 /* Mouse drag data */
@@ -112,7 +114,7 @@ static void set_mode(win_t *win, mode_t mode)
 	if (col->mode == split)
 		for (list_t *cur = col->rows; cur; cur = cur->next) {
 			row_t *row = cur->data;
-			row->height = wm_dpy->root->h;
+			row->height = wm_dpy->geom->h;
 		}
 	wm_update();
 }
@@ -210,10 +212,10 @@ static void put_win(win_t *win, col_t *col)
 	col->row    = row;
 	wm_dpy->col = col;
 
-	row->height = wm_dpy->root->h / MAX(nrows,1);
+	row->height = wm_dpy->geom->h / MAX(nrows,1);
 	if (nrows == 0) {
 		int ncols = list_length(wm_dpy->cols);
-		col->width = wm_dpy->root->w / MAX(ncols-1,1);
+		col->width = wm_dpy->geom->w / MAX(ncols-1,1);
 	}
 }
 
@@ -296,8 +298,8 @@ void wm_update(void)
 	int       sy=0; // Size of focused stack window
 
 	/* Scale horizontally */
-	x  = wm_dpy->root->x;
-	mx = wm_dpy->root->w - (list_length(wm_dpy->cols)+1)*MARGIN;
+	x  = wm_dpy->geom->x;
+	mx = wm_dpy->geom->w - (list_length(wm_dpy->cols)+1)*MARGIN;
 	for (list_t *lx = wm_dpy->cols; lx; lx = lx->next)
 		tx += COL(lx)->width;
 	for (list_t *lx = wm_dpy->cols; lx; lx = lx->next)
@@ -309,8 +311,8 @@ void wm_update(void)
 		ty = 0;
 		for (list_t *ly = col->rows; ly; ly = ly->next)
 			ty += ROW(ly)->height;
-		y  = wm_dpy->root->y;
-		my = wm_dpy->root->h - (list_length(col->rows)+1)*MARGIN;
+		y  = wm_dpy->geom->y;
+		my = wm_dpy->geom->h - (list_length(col->rows)+1)*MARGIN;
 		sy = my              - (list_length(col->rows)-1)*STACK;
 		for (list_t *ly = col->rows; ly; ly = ly->next) {
 			win_t *win = ROW(ly)->win;
@@ -330,7 +332,7 @@ void wm_update(void)
 			case max:
 			case tab:
 				sys_move(win, x+MARGIN, 0+MARGIN,
-					col->width, wm_dpy->root->h-2*MARGIN);
+					col->width, wm_dpy->geom->h-2*MARGIN);
 				if (col->row->win == win)
 					sys_raise(win);
 				break;
@@ -344,7 +346,7 @@ void wm_update(void)
 
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
-	if (!win || win == wm_dpy->root) return 0;
+	if (!win || win == wm_dpy->geom) return 0;
 	//printf("wm_handle_key: %p - %x %c%c%c%c%c\n", win, key,
 	//	mod.up    ? '^' : 'v',
 	//	mod.alt   ? 'a' : '-',
@@ -487,24 +489,33 @@ void wm_remove(win_t *win)
 	if (wm_focus)
 		sys_focus(wm_focus);
 	else
-		sys_focus(wm_dpy->root);
+		sys_focus(wm->root);
 	wm_update();
 	print_txt(wm_dpy->cols);
+}
+
+tag_t *tag_new(list_t *screens, int name)
+{
+	tag_t *tag = new0(tag_t);
+	tag->name  = name;
+	for (list_t *cur = screens; cur; cur = cur->next) {
+		dpy_t *dpy  = new0(dpy_t);
+		dpy->geom = cur->data;
+		tag->dpys = list_append(tag->dpys, dpy);
+	}
+	tag->dpy  = tag->dpys->data;
+	return tag;
 }
 
 void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);
-	       wm  = new0(wm_t);
-	tag_t *tag = new0(tag_t);
-	dpy_t *dpy = new0(dpy_t);
 
-	dpy->root  = root;
-	tag->dpys  = list_insert(NULL, dpy);
-	tag->dpy   = dpy;
-	tag->name  = 1;
-	wm->tags   = list_insert(NULL, tag);
-	wm->tag    = tag;
+	wm          = new0(wm_t);
+	wm->root    = root;
+	wm->screens = sys_info(root);
+	wm->tag     = tag_new(wm->screens, 1);
+	wm->tags    = list_insert(NULL, wm->tag);
 
 	Key_t keys_e[] = {key_enter, key_focus};
 	Key_t keys_s[] = {'h', 'j', 'k', 'l'};

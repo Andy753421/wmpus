@@ -30,7 +30,7 @@ void list_insert_after(list_t *prev, void *data)
 list_t *list_append(list_t *head, void *data)
 {
 	list_t *last = head;
-	while (last->next)
+	while (last && last->next)
 		last = last->next;
 	list_t *node = new0(list_t);
 	node->data = data;

@@ -4,7 +4,7 @@ SYS=x11
 CC=gcc
 PROG=awm
 CFLAGS=-g -Werror -Wall
-LIBS=-Wl,--as-needed -lX11
+LIBS=-Wl,--as-needed -lX11 -lXinerama
 TEST=DISPLAY=:2.0
 
 WIN32=

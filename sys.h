@@ -61,6 +61,8 @@ void sys_focus(win_t *win);
 
 void sys_foreach(win_t *win);
 
+list_t *sys_info(win_t *win);
+
 win_t *sys_init(void);
 
 void sys_run(win_t *root);

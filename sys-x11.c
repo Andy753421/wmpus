@@ -6,6 +6,7 @@
 #include <X11/Xproto.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#include <X11/extensions/Xinerama.h>
 
 #include "util.h"
 #include "sys.h"
@@ -451,24 +452,55 @@ void sys_unwatch(win_t *win, Key_t key, mod_t mod)
 		XUngrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid);
 }
 
+list_t *sys_info(win_t *win)
+{
+	int n;
+	XineramaScreenInfo *info = NULL;
+	if (XineramaIsActive(win->sys->dpy))
+		info = XineramaQueryScreens(win->sys->dpy, &n);
+	if (!info) {
+		win_t *screen = new0(win_t);
+		*screen = *win;
+		return list_insert(NULL, screen);
+	}
+	list_t *screens = NULL;
+	for (int i = 0; i < n; i++) {
+		win_t *screen = new0(win_t);
+		screen->x = info[i].x_org;
+		screen->y = info[i].y_org;
+		screen->w = info[i].width;
+		screen->h = info[i].height;
+		screens = list_append(screens, screen);
+	}
+	return screens;
+}
+
 win_t *sys_init(void)
 {
 	Display *dpy;
 	Window   xid;
+
+	/* Open the display */
 	if (!(dpy = XOpenDisplay(NULL)))
 		error("Unable to get display");
 	if (!(xid = DefaultRootWindow(dpy)))
 		error("Unable to get root window");
+
+	/* Setup X11 data */
 	atoms[wm_proto]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
 	atoms[wm_focus]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	atoms[net_strut] = XInternAtom(dpy, "_NET_WM_STRUT", False);
+
 	colors[clr_focus]   = get_color(dpy, "#a0a0ff");
 	colors[clr_unfocus] = get_color(dpy, "#101066");
 	colors[clr_urgent]  = get_color(dpy, "#ff0000");
 	printf("colors = #%06lx #%06lx #%06lx\n", colors[0], colors[1], colors[2]);
+
+	/* Selec Window Managmenet events */
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	xerrorxlib = XSetErrorHandler(xerror);
+
 	return win_find(dpy, xid, 1);
 }
 
