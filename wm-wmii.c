@@ -24,11 +24,28 @@ typedef enum {
 } mode_t;
 
 typedef struct {
+	list_t *rows; // of win_t
+	win_t  *row;
 	int     width;
 	mode_t  mode;
-	win_t  *focus;
-	list_t *rows;
 } col_t;
+
+typedef struct {
+	list_t *cols; // of col_t
+	col_t  *col;
+	win_t  *root;
+} dpy_t;
+
+typedef struct {
+	list_t *dpys; // of dpy_t
+	dpy_t  *dpy;
+	int     name;
+} tag_t;
+
+typedef struct {
+	list_t *tags; // of tag_t
+	tag_t  *tag;
+} wm_t;
 
 /* Mouse drag data */
 static drag_t move_mode;
@@ -37,9 +54,9 @@ static ptr_t  move_prev;
 static struct { int v, h; } move_dir;
 
 /* Window management data */
-static win_t  *wm_focus;
-static list_t *wm_cols;
-static win_t  *wm_root;
+static wm_t  *wm;
+#define wm_focus (wm->tag->dpy->col ? wm->tag->dpy->col->row : NULL)
+#define wm_dpy wm->tag->dpy
 
 /* Helper functions */
 static void set_mode(win_t *win, mode_t mode)
@@ -53,16 +70,13 @@ static void set_mode(win_t *win, mode_t mode)
 	if (col->mode == split)
 		for (list_t *cur = col->rows; cur; cur = cur->next) {
 			win_t *row = cur->data;
-			row->h = wm_root->h;
+			row->h = wm_dpy->root->h;
 		}
 	wm_update();
 }
 
 static void set_focus(win_t *win)
 {
-	if (win->wm && win->wm->col)
-		((col_t*)win->wm->col->data)->focus = win;
-
 	/* - Only grab mouse button on unfocused window,
 	 *   this prevents stealing all mouse clicks from client windows,
 	 * - A better way may be to re-send mouse clicks to client windows
@@ -73,7 +87,8 @@ static void set_focus(win_t *win)
 		sys_unwatch(win, i, MOD());
 	}
 
-	wm_focus = win;
+	if (win->wm && win->wm->col)
+		((col_t*)win->wm->col->data)->row = win;
 	sys_focus(win);
 }
 
@@ -100,7 +115,7 @@ static void print_txt(list_t *cols)
 				( lcol->prev ? lcol->prev->data : NULL ),
 				col,
 				( lcol->next ? lcol->next->data : NULL ),
-				col->width, col->mode, col->focus);
+				col->width, col->mode, col->row);
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 			win_t *win = lrow->data;
 			printf("  win:\t^%-9p <%-9p [%p=%p] >%-9p  -  %4dpx focus=%d%d\n",
@@ -108,7 +123,7 @@ static void print_txt(list_t *cols)
 					(win->wm->row->prev ? win->wm->row->prev->data : NULL),
 					win->wm->row->data, win,
 					(win->wm->row->next ? win->wm->row->next->data : NULL),
-					win->h, col->focus == win, wm_focus == win);
+					win->h, col->row == win, wm_focus == win);
 		}
 	}
 }
@@ -118,48 +133,48 @@ static void cut_window(win_t *win)
 	list_t *lrow = win->wm->row;
 	list_t *lcol = win->wm->col;
 	col_t  *col  = lcol->data;
+	dpy_t  *dpy  = wm_dpy; // fixme
 
-	col->focus = lrow->prev ? lrow->prev->data  :
-	             lrow->next ? lrow->next->data  : NULL;
+	col->row  = lrow->prev ? lrow->prev->data :
+	            lrow->next ? lrow->next->data : NULL;
+	col->rows = list_remove(col->rows, lrow);
 
-	wm_focus   = col->focus ? col->focus        :
-	             lcol->prev ? ((col_t*)lcol->prev->data)->focus :
-	             lcol->next ? ((col_t*)lcol->next->data)->focus : NULL;
-
-	col->rows  = list_remove(col->rows, lrow);
-	if (col->rows == NULL && (lcol->next || lcol->prev))
-		wm_cols = list_remove(wm_cols, lcol);
+	if (col->rows == NULL && (lcol->next || lcol->prev)) {
+		dpy->col  = lcol->prev ? lcol->prev->data :
+			    lcol->next ? lcol->next->data : NULL;
+		dpy->cols = list_remove(wm_dpy->cols, lcol);
+	}
 }
 
 static void put_window(win_t *win, list_t *lcol)
 {
 	if (lcol == NULL)
-		lcol = wm_cols = list_insert(wm_cols, new0(col_t));
+		lcol = wm_dpy->cols = list_insert(wm_dpy->cols, new0(col_t));
 
 	col_t *col = lcol->data;
 	int nrows = list_length(col->rows);
-	if (col->focus) {
-		list_insert_after(col->focus->wm->row, win);
-		win->wm->row = col->focus->wm->row->next;
+	if (col->row) {
+		list_insert_after(col->row->wm->row, win);
+		win->wm->row = col->row->wm->row->next;
 	} else {
 		col->rows = list_insert(col->rows, win);
 		win->wm->row = col->rows;
 	}
 	win->wm->col = lcol;
-	col->focus   = win;
-	wm_focus     = win;
+	col->row     = win;
+	wm_dpy->col  = col;
 
-	win->h = wm_root->h / MAX(nrows,1);
+	win->h = wm_dpy->root->h / MAX(nrows,1);
 	if (nrows == 0) {
-		int ncols = list_length(wm_cols);
-		col->width = wm_root->w / MAX(ncols-1,1);
+		int ncols = list_length(wm_dpy->cols);
+		col->width = wm_dpy->root->w / MAX(ncols-1,1);
 	}
 }
 
 static void shift_window(win_t *win, int col, int row)
 {
 	printf("shift_window: %p - %+d,%+d\n", win, col, row);
-	print_txt(wm_cols);
+	print_txt(wm_dpy->cols);
 	printf("shift_window: >>>\n");
 	if (row != 0) {
 		list_t *src = win->wm->row, *dst = NULL;
@@ -178,12 +193,12 @@ static void shift_window(win_t *win, int col, int row)
 		list_t *src = win->wm->col, *dst = NULL;
 		if (col < 0) {
 			if (!src->prev && !onlyrow)
-				wm_cols = list_insert(wm_cols, new0(col_t));
+				wm_dpy->cols = list_insert(wm_dpy->cols, new0(col_t));
 			dst = src->prev;
 		}
 		if (col > 0) {
 			if (!src->next && !onlyrow)
-				wm_cols = list_append(wm_cols, new0(col_t));
+				wm_dpy->cols = list_append(wm_dpy->cols, new0(col_t));
 			dst = src->next;
 		}
 		if (src && dst) {
@@ -192,7 +207,7 @@ static void shift_window(win_t *win, int col, int row)
 			wm_update();
 		}
 	}
-	print_txt(wm_cols);
+	print_txt(wm_dpy->cols);
 }
 
 static list_t *get_next(list_t *list, int forward)
@@ -215,7 +230,7 @@ static void shift_focus(win_t *win, int col, int row)
 	}
 	if (col != 0) {
 		col_t *next = get_next(win->wm->col, col > 0)->data;
-		set_focus(next->focus->wm->row->data);
+		set_focus(next->row->wm->row->data);
 	}
 }
 
@@ -228,21 +243,21 @@ void wm_update(void)
 	int       sy=0; // Size of focused stack window
 
 	/* Scale horizontally */
-	x  = wm_root->x;
-	mx = wm_root->w - (list_length(wm_cols)+1)*MARGIN;
-	for (list_t *lx = wm_cols; lx; lx = lx->next)
+	x  = wm_dpy->root->x;
+	mx = wm_dpy->root->w - (list_length(wm_dpy->cols)+1)*MARGIN;
+	for (list_t *lx = wm_dpy->cols; lx; lx = lx->next)
 		tx += ((col_t*)lx->data)->width;
-	for (list_t *lx = wm_cols; lx; lx = lx->next)
+	for (list_t *lx = wm_dpy->cols; lx; lx = lx->next)
 		((col_t*)lx->data)->width *= (float)mx / tx;
 
 	/* Scale each column vertically */
-	for (list_t *lx = wm_cols; lx; lx = lx->next) {
+	for (list_t *lx = wm_dpy->cols; lx; lx = lx->next) {
 		col_t *col = lx->data;
 		ty = 0;
 		for (list_t *ly = col->rows; ly; ly = ly->next)
 			ty += ((win_t*)ly->data)->h;
-		y  = wm_root->y;
-		my = wm_root->h - (list_length(col->rows)+1)*MARGIN;
+		y  = wm_dpy->root->y;
+		my = wm_dpy->root->h - (list_length(col->rows)+1)*MARGIN;
 		sy = my         - (list_length(col->rows)-1)*STACK;
 		for (list_t *ly = col->rows; ly; ly = ly->next) {
 			win_t *win = ly->data;
@@ -254,15 +269,15 @@ void wm_update(void)
 				height = win->h;
 				break;
 			case stack:
-				height = col->focus == win ? sy : STACK;
+				height = col->row == win ? sy : STACK;
 				sys_move(win, x+MARGIN, y+MARGIN,
 					col->width, height);
 				break;
 			case max:
 			case tab:
 				sys_move(win, x+MARGIN, 0+MARGIN,
-					col->width, wm_root->h-2*MARGIN);
-				if (col->focus == win)
+					col->width, wm_dpy->root->h-2*MARGIN);
+				if (col->row == win)
 					sys_raise(win);
 				break;
 			}
@@ -274,7 +289,7 @@ void wm_update(void)
 
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
-	if (!win || win == wm_root) return 0;
+	if (!win || win == wm_dpy->root) return 0;
 	//printf("wm_handle_key: %p - %x %c%c%c%c%c\n", win, key,
 	//	mod.up    ? '^' : 'v',
 	//	mod.alt   ? 'a' : '-',
@@ -299,7 +314,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		if (key == key_f1) return sys_raise(win), 1;
 		if (key == key_f2) return set_focus(win), 1;
 		if (key == key_f5) return wm_update(),    1;
-		if (key == key_f6) return print_txt(wm_cols), 1;
+		if (key == key_f6) return print_txt(wm_dpy->cols), 1;
 	}
 	if (key_mouse0 <= key && key <= key_mouse7)
 		sys_raise(win);
@@ -395,7 +410,7 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 void wm_insert(win_t *win)
 {
 	printf("wm_insert: %p\n", win);
-	print_txt(wm_cols);
+	print_txt(wm_dpy->cols);
 
 	/* Initialize window */
 	win->wm = new0(win_wm_t);
@@ -404,33 +419,43 @@ void wm_insert(win_t *win)
 
 	/* Add to screen */
 	list_t *lcol = wm_focus && wm_focus->wm ?
-		wm_focus->wm->col : wm_cols;
+		wm_focus->wm->col : wm_dpy->cols;
 	put_window(win, lcol);
 
 	/* Arrange */
 	wm_update();
 	sys_focus(wm_focus);
-	print_txt(wm_cols);
+	print_txt(wm_dpy->cols);
 }
 
 void wm_remove(win_t *win)
 {
 	printf("wm_remove: %p - (%p,%p)\n", win,
 			win->wm->col, win->wm->row);
-	print_txt(wm_cols);
+	print_txt(wm_dpy->cols);
 	cut_window(win);
 	if (wm_focus)
 		sys_focus(wm_focus);
 	else
-		sys_focus(wm_root);
+		sys_focus(wm_dpy->root);
 	wm_update();
-	print_txt(wm_cols);
+	print_txt(wm_dpy->cols);
 }
 
 void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);
-	wm_root = root;
+	       wm  = new0(wm_t);
+	tag_t *tag = new0(tag_t);
+	dpy_t *dpy = new0(dpy_t);
+
+	dpy->root  = root;
+	tag->dpys  = list_insert(NULL, dpy);
+	tag->dpy   = dpy;
+	tag->name  = 1;
+	wm->tags   = list_insert(NULL, tag);
+	wm->tag    = tag;
+
 	Key_t keys_e[] = {key_enter, key_focus};
 	Key_t keys_s[] = {'h', 'j', 'k', 'l'};
 	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't',
