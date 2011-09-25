@@ -57,6 +57,14 @@ int list_length(list_t *node)
 	return len;
 }
 
+list_t *list_find(list_t *list, void *data)
+{
+	for (list_t *cur = list; cur; cur = cur->next)
+		if (cur->data == data)
+			return cur;
+	return NULL;
+}
+
 /* Misc */
 int error(char *fmt, ...)
 {
