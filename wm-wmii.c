@@ -5,7 +5,7 @@
 #include "sys.h"
 #include "wm.h"
 
-#define MODKEY alt
+#define MODKEY ctrl
 #define MARGIN 0
 #define STACK  25
 
@@ -198,9 +198,11 @@ static void shift_window(win_t *win, int col, int row)
 static list_t *get_next(list_t *list, int forward)
 {
 	list_t *next = forward ? list->next : list->prev;
-	if (next == NULL)
-		while ((list = forward ? list->prev : list->next))
+	if (next == NULL) {
+		next = list;
+		while ((list = forward ? next->prev : next->next))
 			next = list;
+	}
 	return next;
 }
 static void shift_focus(win_t *win, int col, int row)
