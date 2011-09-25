@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <search.h>
 
 #define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0500
@@ -12,10 +13,6 @@
 #include "sys.h"
 #include "wm.h"
 
-int   test;
-int   shellhookid;
-mod_t mod_state;
-
 /* Internal structures */
 struct win_sys {
 	HWND hwnd;
@@ -26,7 +23,12 @@ typedef struct {
 	int   vk;
 } keymap_t;
 
-keymap_t key2vk[] = {
+/* Global data */
+static int   shellhookid;
+static void *win_cache;
+
+/* Conversion functions */
+static keymap_t key2vk[] = {
 	{key_mouse1  , VK_LBUTTON },
 	{key_mouse2  , VK_MBUTTON },
 	{key_mouse3  , VK_RBUTTON },
@@ -63,9 +65,51 @@ keymap_t key2vk[] = {
 	{key_win     , VK_RWIN    },
 };
 
-/* Helper functions */
-win_t *win_new(HWND hwnd)
+/* - Keycodes */
+static Key_t w2key(UINT vk)
 {
+	keymap_t *km = map_getr(key2vk,vk);
+	return km ? km->key : tolower(vk);
+}
+
+static UINT key2w(Key_t key)
+{
+	keymap_t *km = map_get(key2vk,key);
+	return km ? km->vk : toupper(key);
+}
+
+static mod_t getmod(void)
+{
+	return (mod_t){
+		.alt   = GetKeyState(VK_MENU)    < 0,
+		.ctrl  = GetKeyState(VK_CONTROL) < 0,
+		.shift = GetKeyState(VK_SHIFT)   < 0,
+		.win   = GetKeyState(VK_LWIN)    < 0 ||
+		         GetKeyState(VK_RWIN)    < 0,
+	};
+}
+
+/* - Pointers */
+static ptr_t getptr(void)
+{
+	POINT wptr;
+	GetCursorPos(&wptr);
+	return (ptr_t){-1, -1, wptr.x, wptr.y};
+}
+
+/* Helpers */
+static win_t *win_new(HWND hwnd, int checkwin)
+{
+	if (checkwin) {
+		char winclass[256];
+		int exstyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+		GetClassName(hwnd, winclass, sizeof(winclass));
+		if (!IsWindowVisible(hwnd))      return NULL; // Invisible stuff..
+		if (!strcmp("#32770", winclass)) return NULL; // Message boxes
+		if (GetWindow(hwnd, GW_OWNER))   return NULL; // Dialog boxes, etc
+		if (exstyle & WS_EX_TOOLWINDOW)  return NULL; // Floating toolbars
+	}
+
 	RECT rect = {};
 	GetWindowRect(hwnd, &rect);
 	win_t *win = new0(win_t);
@@ -75,36 +119,51 @@ win_t *win_new(HWND hwnd)
 	win->h         = rect.bottom - rect.top;
 	win->sys       = new0(win_sys_t);
 	win->sys->hwnd = hwnd;
+	printf("win_new: %p = %p (%d,%d %dx%d)\n", win, hwnd,
+			win->x, win->y, win->w, win->h);
 	return win;
 }
 
-/* Conversion functions */
-/* - Keycodes */
-Key_t w2key(UINT vk)
+static int win_cmp(const void *_a, const void *_b)
 {
-	keymap_t *km = map_getr(key2vk,vk);
-	return km ? km->key : vk;
+	const win_t *a = _a, *b = _b;
+	if (a->sys->hwnd < b->sys->hwnd) return -1;
+	if (a->sys->hwnd > b->sys->hwnd) return  1;
+	return 0;
 }
 
-UINT key2w(Key_t key)
+static win_t *win_find(HWND hwnd, int create)
 {
-	keymap_t *km = map_get(key2vk,key);
-	return km ? km->vk : toupper(key);
+	if (!hwnd)
+		return NULL;
+	//printf("win_find: %p, %d\n", dpy, (int)xid);
+	win_sys_t sys = {.hwnd=hwnd};
+	win_t     tmp = {.sys=&sys};
+	win_t **old = NULL, *new = NULL;
+	if ((old = tfind(&tmp, &win_cache, win_cmp)))
+		return *old;
+	if (create && (new = win_new(hwnd,1)))
+		tsearch(new, &win_cache, win_cmp);
+	return new;
 }
 
-/* - Pointers */
-ptr_t getptr(void)
+static void win_remove(win_t *win)
+{
+	tdelete(win, &win_cache, win_cmp);
+	free(win->sys);
+	free(win);
+}
+
+static win_t *win_cursor(void)
 {
 	POINT wptr;
 	GetCursorPos(&wptr);
-	return (ptr_t){-1, -1, wptr.x, wptr.y};
+	return win_find(GetAncestor(WindowFromPoint(wptr),GA_ROOT),0);
 }
 
-win_t *getwin(void)
+static win_t *win_focused(void)
 {
-	POINT wptr;
-	GetCursorPos(&wptr);
-	return win_new(GetAncestor(WindowFromPoint(wptr),GA_ROOT));
+	return win_find(GetForegroundWindow(),0);
 }
 
 /* Callbacks */
@@ -112,66 +171,75 @@ LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 {
 	KBDLLHOOKSTRUCT *st = (KBDLLHOOKSTRUCT *)lParam;
 	Key_t key = w2key(st->vkCode);
-	mod_state.up = !!(st->flags & 0x80);
-	if (key == key_alt  ) mod_state.alt   = !mod_state.up;
-	if (key == key_ctrl ) mod_state.ctrl  = !mod_state.up;
-	if (key == key_shift) mod_state.shift = !mod_state.up;
-	if (key == key_win  ) mod_state.win   = !mod_state.up;
+	mod_t mod = getmod();
+	mod.up = !!(st->flags & 0x80);
 	printf("KbdProc: %d,%x,%lx - %lx,%lx,%lx - %x,%x\n",
 			msg, wParam, lParam,
 			st->vkCode, st->scanCode, st->flags,
-			key, mod2int(mod_state));
-	wm_handle_key(getwin(), key, mod_state, getptr());
-	return CallNextHookEx(0, msg, wParam, lParam);
+			key, mod2int(mod));
+	return wm_handle_key(win_focused(), key, mod, getptr())
+		|| CallNextHookEx(0, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK MllProc(int msg, WPARAM wParam, LPARAM lParam)
 {
-	Key_t key   = key_none;
+	Key_t key = key_none;
+	mod_t mod = getmod();
 	switch (wParam) {
-	case WM_LBUTTONDOWN: mod_state.up = 0; key = key_mouse1; break;
-	case WM_LBUTTONUP:   mod_state.up = 1; key = key_mouse1; break;
-	case WM_RBUTTONDOWN: mod_state.up = 0; key = key_mouse3; break;
-	case WM_RBUTTONUP:   mod_state.up = 1; key = key_mouse3; break;
+	case WM_LBUTTONDOWN: mod.up = 0; key = key_mouse1; break;
+	case WM_LBUTTONUP:   mod.up = 1; key = key_mouse1; break;
+	case WM_RBUTTONDOWN: mod.up = 0; key = key_mouse3; break;
+	case WM_RBUTTONUP:   mod.up = 1; key = key_mouse3; break;
 	}
 	if (wParam == WM_MOUSEMOVE)
-		return wm_handle_ptr(getwin(), getptr());
+		return wm_handle_ptr(win_cursor(), getptr());
 	else if (key != key_none)
-		return wm_handle_key(getwin(), key, mod_state, getptr());
+		return wm_handle_key(win_cursor(), key, mod, getptr());
 	else
 		return CallNextHookEx(0, msg, wParam, lParam);
 }
 
-LRESULT CALLBACK ShlWndProc(HWND hwnd, int msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 {
-	printf("ShlWndProc: %d, %x, %lx\n", msg, wParam, lParam);
-	switch (wParam) {
+	HWND hwnd = (HWND)wParam;
+	win_t *win = NULL;
+	switch (msg) {
 	case HSHELL_WINDOWCREATED:
-		printf("ShlProc: window created\n");
-		return 0;
+	case HSHELL_REDRAW:
+		printf("ShlProc: %p - %s\n", hwnd, msg == HSHELL_REDRAW ?
+				"redraw" : "window created");
+		if (!(win = win_find(hwnd,0)))
+			if ((win = win_find(hwnd,1)))
+				wm_insert(win);
+		return 1;
 	case HSHELL_WINDOWDESTROYED:
-		printf("ShlProc: window destroyed\n");
-		return 0;
+		printf("ShlProc: %p - window destroyed\n", hwnd);
+		if ((win = win_find(hwnd,0))) {
+			wm_remove(win);
+			win_remove(win);
+		}
+		return 1;
 	case HSHELL_WINDOWACTIVATED:
-		printf("ShlProc: window activated\n");
+		printf("ShlProc: %p - window activated\n", hwnd);
+		return 1;
+	default:
+		printf("ShlProc: %p - unknown msg, %d\n", hwnd, msg);
 		return 0;
 	}
-	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	printf("WndProc: %d, %x, %lx\n", msg, wParam, lParam);
+	//printf("WndProc: %d, %x, %lx\n", msg, wParam, lParam);
 	switch (msg) {
-	case WM_CREATE:
-	case WM_CLOSE:
-	case WM_DESTROY:
-		return 0;
+	case WM_CREATE:  printf("WndProc: %p - create\n",  hwnd); return 0;
+	case WM_CLOSE:   printf("WndProc: %p - close\n",   hwnd); return 0;
+	case WM_DESTROY: printf("WndProc: %p - destroy\n", hwnd); return 0;
+	case WM_HOTKEY:  printf("WndProc: %p - hotkey\n",  hwnd); return 0;
 	}
-	if (msg == shellhookid) {
-		printf("WndProc: shellhook\n");
-		return ShlWndProc(hwnd, msg, wParam, lParam);
-	}
+	if (msg == shellhookid)
+		if (ShlProc(wParam, lParam, 0))
+			return 1;
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
@@ -181,13 +249,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	MoveWindow(win->sys->hwnd, x, y, w, h, TRUE);
+	win->x = MAX(x,0); win->y = MAX(y,0);
+	win->w = MAX(w,1); win->h = MAX(h,1);
+	MoveWindow(win->sys->hwnd, win->x, win->y, win->w, win->h, TRUE);
 }
 
 void sys_raise(win_t *win)
 {
 	printf("sys_raise: %p\n", win);
 	SetForegroundWindow(win->sys->hwnd);
+
 	//HWND hwnd = win->sys->hwnd;
 	//HWND top  = GetAncestor(hwnd,GA_ROOT);
 	//SetWindowPos(top, HWND_TOPMOST, 0, 0, 0, 0,
@@ -197,75 +268,75 @@ void sys_raise(win_t *win)
 void sys_focus(win_t *win)
 {
 	printf("sys_focus: %p\n", win);
-	//POINT wptr;
-	//GetCursorPos(&wptr);
-	//HWND old  = GetForegroundWindow();
-	//HWND newc = WindowFromPoint(wptr);
-	//HWND new  = GetAncestor(newc,GA_ROOT);
-	//SetWindowPos(new, HWND_NOTOPMOST, 0, 0, 0, 0,
-	//		SWP_NOMOVE|SWP_NOSIZE);
-	//SetWindowPos(old, HWND_NOTOPMOST, 0, 0, 0, 0,
-	//		SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
-	//SetFocus(hwnd);
-	//SetActiveWindow(hwnd);
 
-	// Go to: HKEY_CURRENT_USER\Control Panel\Mouse
-	// Modify/Create DWORD Value of Data type REG_DWORD Named [ActiveWindowTracking] Setting for Value Data: [0 = ActiveWindowTracking Disabled / 1 = ActiveWindowTracking Enabled]
-
-	//LockSetForegroundWindow(LSFW_LOCK);
-	//SetForegroundWindow(win->sys->hwnd);
-	//LockSetForegroundWindow(LSFW_UNLOCK);
-	//SetFocus(win->sys->hwnd);
-	//SetActiveWindow(win->sys->hwnd);
-	//EnableWindow(win->sys->hwnd, TRUE);
+	/* Windows prevents a thread from using SetForegroundInput under
+	 * certain circumstnaces and instead flashes the windows toolbar icon.
+	 * Attaching the htread input queues avoids this behavior */
+	DWORD oldId = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+	DWORD newId = GetWindowThreadProcessId(win->sys->hwnd,        NULL);
+	AttachThreadInput(oldId, newId, TRUE);
+	SetForegroundWindow(win->sys->hwnd);
+	AttachThreadInput(oldId, newId, FALSE);
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)
 {
+	(void)key2w; // TODO
 	printf("sys_watch: %p\n", win);
+}
+
+void sys_unwatch(win_t *win, Key_t key, mod_t mod)
+{
+	(void)key2w; // TODO
+	printf("sys_unwatch: %p\n", win);
 }
 
 win_t *sys_init(void)
 {
 	HINSTANCE hInst = GetModuleHandle(NULL);
-	test = 123;
+	HWND      hwnd  = NULL;
 
-	/* Class */
-	WNDCLASSEX wc    = {};
-	wc.cbSize        = sizeof(WNDCLASSEX);
-	wc.lpfnWndProc   = WndProc;
-	wc.hInstance     = hInst;
-	wc.lpszClassName = "awm_class";
+	/* Setup AWM window class */
+	WNDCLASSEX wc    = {
+		.cbSize        = sizeof(WNDCLASSEX),
+		.lpfnWndProc   = WndProc,
+		.hInstance     = hInst,
+		.lpszClassName = "awm_class",
+	};
 	if (!RegisterClassEx(&wc))
 		printf("sys_init: Error Registering Class - %lu\n", GetLastError());
 
-	/* Bargh!? */
-	HWND hwnd = CreateWindowEx(0, "awm_class", "awm", 0,
-			0, 0, 0, 0, HWND_MESSAGE, NULL, hInst, NULL);
-	if (!hwnd)
-		printf("sys_init: Error Creating Window - %lu\n", GetLastError());
+	/* Get work area */
+        RECT rc;
+        SystemParametersInfo(SPI_GETWORKAREA, 0, &rc, 0);
 
-	/* Try Shell Hook Window */
-	HINSTANCE hInstUser32 = GetModuleHandle("USER32.DLL");
-	BOOL (*RegisterShellHookWindow)(HWND hwnd) = (void*)GetProcAddress(hInstUser32, "RegisterShellHookWindow");
+	/* Create shell hook window */
+	if (!(hwnd = CreateWindowEx(0, "awm_class", "awm", 0,
+			rc.left, rc.top, rc.right-rc.left, rc.bottom-rc.top,
+			HWND_MESSAGE, NULL, hInst, NULL)))
+		printf("sys_init: Error Creating Shell Hook Window - %lu\n", GetLastError());
+
+	/* Register shell hook */
+	BOOL (*RegisterShellHookWindow)(HWND) = (void*)GetProcAddress(
+			GetModuleHandle("USER32.DLL"), "RegisterShellHookWindow");
 	if (!RegisterShellHookWindow)
 		printf("sys_init: Error Finding RegisterShellHookWindow - %lu\n", GetLastError());
 	if (!RegisterShellHookWindow(hwnd))
 		printf("sys_init: Error Registering ShellHook Window - %lu\n", GetLastError());
 	shellhookid = RegisterWindowMessage("SHELLHOOK");
 
-	/* Register other hooks for testing */
-	SetWindowsHookEx(WH_MOUSE_LL,    MllProc, hInst, 0);
+	/* Input hooks */
 	SetWindowsHookEx(WH_KEYBOARD_LL, KbdProc, hInst, 0);
+	//SetWindowsHookEx(WH_MOUSE_LL,    MllProc, hInst, 0);
 	//SetWindowsHookEx(WH_SHELL,       ShlProc, hInst, 0);
 
+	/* Alternate ways to get input */
 	//if (!RegisterHotKey(hwnd, 123, MOD_CONTROL, VK_LBUTTON))
 	//	printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
-	if (!RegisterHotKey(NULL, 123, MOD_CONTROL, VK_LBUTTON))
-		printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
+	//if (!RegisterHotKey(NULL, 123, MOD_CONTROL, VK_LBUTTON))
+	//	printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
 
-	return win_new(hwnd);
-
+	return win_new(hwnd,0);
 }
 
 void sys_run(win_t *root)

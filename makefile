@@ -7,13 +7,14 @@ CFLAGS=-g -Werror -Wall
 LIBS=-Wl,--as-needed -lX11
 TEST=DISPLAY=:2.0
 
+WIN32=
 ifdef WIN32
 SYS=win32
 CC=i686-pc-mingw32-gcc
-CFLAGS=-g -Werror -Wall
+CFLAGS=-g -Werror -Wall -D_NO_OLDNAMES
 LIBS=
 PROG=awm.exe
-TEST=wine
+TEST=cp -t /t/htdocs/temp
 endif
 
 test: $(PROG)
