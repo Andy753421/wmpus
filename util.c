@@ -57,6 +57,13 @@ int list_length(list_t *node)
 	return len;
 }
 
+list_t *list_last(list_t *list)
+{
+	while (list && list->next)
+		list = list->next;
+	return list;
+}
+
 list_t *list_find(list_t *list, void *data)
 {
 	for (list_t *cur = list; cur; cur = cur->next)

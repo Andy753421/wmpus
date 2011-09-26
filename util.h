@@ -34,6 +34,8 @@ list_t *list_remove(list_t *head, list_t *item);
 
 int list_length(list_t *item);
 
+list_t *list_last(list_t *list);
+
 list_t *list_find(list_t *list, void *data);
 
 /* Misc */
