@@ -26,7 +26,7 @@ debug: $(PROG)
 $(PROG): main.o util.o sys-$(SYS).o wm-$(WM).o
 	$(CC) $(CFLAGS) -o $@ $+ $(LIBS)
 
-%.o: %.c $(wildcard *.h)
+%.o: %.c $(wildcard *.h) makefile
 	$(CC) --std=gnu99 $(CFLAGS) -c -o $@ $<
 
 clean:

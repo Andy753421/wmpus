@@ -69,6 +69,7 @@ static wm_t  *wm;
 #define wm_tag   wm->tag
 #define wm_focus (wm_tag && wm_dpy && wm_col && wm_row ? wm_win : NULL)
 
+#define WIN(l) ((win_t*)(l)->data)
 #define ROW(l) ((row_t*)(l)->data)
 #define COL(l) ((col_t*)(l)->data)
 #define DPY(l) ((dpy_t*)(l)->data)
@@ -471,7 +472,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		if (key == key_f3) return sys_show(win, st_show), 1;
 		if (key == key_f4) return sys_show(win, st_hide), 1;
 		if (key == key_f5) return wm_update(),    1;
-		if (key == key_f6) return print_txt(), 1;
+		if (key == key_f6) return print_txt(),    1;
 	}
 	if (key_mouse0 <= key && key <= key_mouse7)
 		sys_raise(win);
@@ -611,9 +612,19 @@ void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);
 
+	/* Hack, fix screen order */
+	list_t *screens = sys_info(root);
+	list_t *left  = screens;
+	list_t *right = screens->next;
+	if (left && right && WIN(left)->x > WIN(right)->x) {
+	    	void *tmp   = left->data;
+	    	left->data  = right->data;
+	    	right->data = tmp;
+	}
+
 	wm          = new0(wm_t);
 	wm->root    = root;
-	wm->screens = sys_info(root);
+	wm->screens = screens;
 	wm->tag     = tag_new(wm->screens, 1);
 	wm->tags    = list_insert(NULL, wm->tag);
 
@@ -622,7 +633,7 @@ void wm_init(win_t *root)
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-		key_f1, key_f2, key_f3, key_f4, key_f5, key_f6,
+		/*key_f1, key_f2, key_f3, key_f4,*/ key_f5, key_f6,
 		key_mouse1, key_mouse3};
 	for (int i = 0; i < countof(keys_e); i++)
 		sys_watch(root, keys_e[i],  MOD());

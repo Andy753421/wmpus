@@ -16,6 +16,7 @@
 /* Internal structures */
 struct win_sys {
 	HWND hwnd;
+	state_t state;
 };
 
 typedef struct {
@@ -214,7 +215,8 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 		return 1;
 	case HSHELL_WINDOWDESTROYED:
 		printf("ShlProc: %p - window destroyed\n", hwnd);
-		if ((win = win_find(hwnd,0))) {
+		if ((win = win_find(hwnd,0)) &&
+		    win->sys->state == st_show) {
 			wm_remove(win);
 			win_remove(win);
 		}
@@ -249,7 +251,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	win->x = MAX(x,0); win->y = MAX(y,0);
+	win->x = x; win->y = y;
 	win->w = MAX(w,1); win->h = MAX(h,1);
 	MoveWindow(win->sys->hwnd, win->x, win->y, win->w, win->h, TRUE);
 }
@@ -279,6 +281,23 @@ void sys_focus(win_t *win)
 	AttachThreadInput(oldId, newId, FALSE);
 }
 
+void sys_show(win_t *win, state_t state)
+{
+	static struct {
+		char *str;
+		int   cmd;
+	} map[] = {
+		[st_show ] {"show" , SW_SHOW    },
+		[st_full ] {"full" , SW_MAXIMIZE},
+		[st_shade] {"shade", SW_SHOW    },
+		[st_icon ] {"icon" , SW_MINIMIZE},
+		[st_hide ] {"hide" , SW_HIDE    },
+	};
+	win->sys->state = state;
+	printf("sys_show: %s\n", map[state].str);
+	ShowWindow(win->sys->hwnd, map[state].cmd);
+}
+
 void sys_watch(win_t *win, Key_t key, mod_t mod)
 {
 	(void)key2w; // TODO
@@ -289,6 +308,31 @@ void sys_unwatch(win_t *win, Key_t key, mod_t mod)
 {
 	(void)key2w; // TODO
 	printf("sys_unwatch: %p\n", win);
+}
+
+BOOL CALLBACK Mon(HMONITOR mon, HDC dc, LPRECT rect, LPARAM _screens)
+{
+	MONITORINFO info = {.cbSize=sizeof(MONITORINFO)};
+	GetMonitorInfo(mon, &info);
+	RECT *work = &info.rcWork;
+
+	list_t **screens = (list_t**)_screens;
+	win_t *screen = new0(win_t);
+	screen->x = work->left;
+	screen->y = work->top;
+	screen->w = work->right  - work->left;
+	screen->h = work->bottom - work->top;
+	*screens = list_append(*screens, screen);
+	printf("mon_proc: %d,%d %dx%d\n",
+		screen->x, screen->y, screen->w, screen->h);
+	return TRUE;
+}
+
+list_t *sys_info(win_t *win)
+{
+	list_t *screens = NULL;
+	EnumDisplayMonitors(NULL, NULL, Mon, (LPARAM)&screens);
+	return screens;
 }
 
 win_t *sys_init(void)

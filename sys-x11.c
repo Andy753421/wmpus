@@ -388,7 +388,7 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	//printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
 	int b = 2*BORDER;
-	win->x = MAX(x,0);   win->y = MAX(y,0);
+	win->x = x; win->y = y;
 	win->w = MAX(w,1+b); win->h = MAX(h,1+b);
 	w      = MAX(w-b,1); h      = MAX(h-b,1);
 	XMoveResizeWindow(win->sys->dpy, win->sys->xid, x, y, w, h);
