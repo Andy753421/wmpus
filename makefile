@@ -3,7 +3,7 @@ WM=wmii
 SYS=x11
 CC=gcc
 PROG=awm
-CFLAGS=-g -Werror -Wall
+CFLAGS=-g -Werror -Wall -Os
 LIBS=-Wl,--as-needed -lX11 -lXinerama
 TEST=DISPLAY=:2.0
 

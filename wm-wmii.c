@@ -109,7 +109,8 @@ static int search(tag_t *tag, win_t *target,
 static void set_mode(win_t *win, mode_t mode)
 {
 	col_t *col;
-	search(wm_tag, win, NULL, &col, NULL);
+	if (!search(wm_tag, win, NULL, &col, NULL))
+		return;
 	printf("set_mode: %p, %d -> %d\n",
 			col, col->mode, mode);
 	col->mode = mode;
@@ -237,7 +238,8 @@ static void shift_window(win_t *win, int col, int row)
 	print_txt();
 	printf("shift_window: >>>\n");
 	list_t *ldpy, *lcol, *lrow;
-	searchl(wm_tag, win, &ldpy, &lcol, &lrow);
+	if (!searchl(wm_tag, win, &ldpy, &lcol, &lrow))
+		return;
 	dpy_t *dpy = ldpy->data;
 	if (row != 0) {
 		list_t *src = lrow, *dst = NULL;
@@ -303,7 +305,8 @@ static void shift_focus(int cols, int rows)
 	printf("shift_focus: %+d,%+d\n", cols, rows);
 	if (rows != 0 && wm_focus) {
 		list_t *dpy, *col, *row;
-		searchl(wm_tag, wm_focus, &dpy, &col, &row);
+		if (!searchl(wm_tag, wm_focus, &dpy, &col, &row))
+			return;
 		row_t *next = get_next(row, rows > 0)->data;
 		set_focus(next->win);
 		if (COL(col)->mode != split)
@@ -312,7 +315,8 @@ static void shift_focus(int cols, int rows)
 	if (cols != 0) {
 		list_t *dpy, *col, *row, *ndpy, *ncol = NULL;
 		if (wm_focus) {
-			searchl(wm_tag, wm_focus, &dpy, &col, &row);
+			if (!searchl(wm_tag, wm_focus, &dpy, &col, &row))
+				return;
 			ncol = cols > 0 ? col->next : col->prev;
 		} else {
 			dpy = list_find(wm_tag->dpys, wm_dpy);
