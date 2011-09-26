@@ -41,13 +41,21 @@ typedef struct {
 	unsigned char spare : 3;
 } mod_t;
 #define MOD(...) ((mod_t){__VA_ARGS__})
-#define mod2int(mod) (*((unsigned short*)&(mod)))
+#define mod2int(mod) (*((unsigned char*)&(mod)))
 
 typedef struct {
 	int  x,  y;
 	int rx, ry;
 } ptr_t;
 #define PTR(...) ((ptr_t){__VA_ARGS__})
+
+typedef enum {
+	st_show,
+	st_full,
+	st_shade,
+	st_icon,
+	st_hide,
+} state_t;
 
 void sys_watch(win_t *win, Key_t key, mod_t mod);
 
@@ -60,6 +68,8 @@ void sys_raise(win_t *win);
 void sys_focus(win_t *win);
 
 void sys_foreach(win_t *win);
+
+void sys_show(win_t *win, state_t st);
 
 list_t *sys_info(win_t *win);
 

@@ -21,6 +21,7 @@ struct win_sys {
 	struct {
 		int left, right, top, bottom;
 	} strut;
+	state_t  state;
 };
 
 typedef struct {
@@ -254,7 +255,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 {
 	Display  *dpy = root->sys->dpy;
 	win_t *win = NULL;
-	printf("event: %d\n", type);
+	//printf("event: %d\n", type);
 
 	/* Common data for all these events ... */
 	ptr_t ptr; mod_t mod;
@@ -272,6 +273,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	if (type == KeyPress) {
 		while (XCheckTypedEvent(dpy, KeyPress, ev));
 		KeySym sym = XKeycodeToKeysym(dpy, ev->xkey.keycode, 0);
+		printf("got key %c %hhx\n", x2key(sym), mod2int(mod));
 		wm_handle_key(win, x2key(sym), mod, ptr);
 	}
 	else if (type == KeyRelease) {
@@ -306,7 +308,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 			wm_handle_key(win, key, MOD(), PTR());
 	}
 	else if (type == FocusIn || type == FocusOut) {
-		printf("focus: %d\n", type);
+		//printf("focus: %d\n", type);
 		key_t key = FocusIn ? key_focus : key_unfocus;
 		if ((win = win_find(dpy,ev->xfocus.window,0)))
 			wm_handle_key(win, key, MOD(), PTR());
@@ -318,14 +320,19 @@ static void process_event(int type, XEvent *ev, win_t *root)
 		printf("map: %d\n", type);
 	}
 	else if (type == UnmapNotify) {
-		//printf("unmap: %d\n", type);
-		if ((win = win_find(dpy,ev->xunmap.window,0))) {
+		if ((win = win_find(dpy,ev->xunmap.window,0)) &&
+		     win->sys->state == st_show) {
 			if (!del_strut(root, win))
 				wm_remove(win);
 			else
 				wm_update();
-			win_remove(win);
+			win->sys->state = st_hide;
 		}
+	}
+	else if (type == DestroyNotify) {
+		//printf("destroy: %d\n", type);
+		if ((win = win_find(dpy,ev->xdestroywindow.window,0)))
+			win_remove(win);
 	}
 	else if (type == ConfigureRequest) {
 		XConfigureRequestEvent *cre = &ev->xconfigurerequest;
@@ -402,7 +409,7 @@ void sys_raise(win_t *win)
 
 void sys_focus(win_t *win)
 {
-	printf("sys_focus: %p\n", win);
+	//printf("sys_focus: %p\n", win);
 
 	/* Set border on focused window */
 	static win_t *last = NULL;
@@ -423,6 +430,30 @@ void sys_focus(win_t *win)
 		.xclient.data.l[0]    = atoms[wm_focus],
 		.xclient.data.l[1]    = CurrentTime,
 	});
+}
+
+void sys_show(win_t *win, state_t state)
+{
+	win->sys->state = state;
+	switch (state) {
+	case st_show:
+		printf("sys_show: show\n");
+		XMapWindow(win->sys->dpy, win->sys->xid);
+		return;
+	case st_full:
+		printf("sys_show: full\n");
+		return;
+	case st_shade:
+		printf("sys_show: shade\n");
+		return;
+	case st_icon:
+		printf("sys_show: icon\n");
+		return;
+	case st_hide:
+		printf("sys_show: hide\n");
+		XUnmapWindow(win->sys->dpy, win->sys->xid);
+		return;
+	}
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)

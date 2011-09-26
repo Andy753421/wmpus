@@ -156,32 +156,37 @@ static void set_move(win_t *win, ptr_t ptr, drag_t drag)
 	}
 }
 
-static void print_txt(tag_t *tag)
+static void print_txt(void)
 {
+	for (list_t *ltag = wm->tags; ltag; ltag = ltag->next) {
+		tag_t *tag = ltag->data;
+		printf("tag:       <%-9p [%p->%p] >%-9p  -  %d\n",
+				ltag->prev, ltag, ltag->data, ltag->next, tag->name);
 	for (list_t *ldpy = tag->dpys; ldpy; ldpy = ldpy->next) {
 		dpy_t *dpy  = ldpy->data;
 		win_t *geom = dpy->geom;
-		printf("dpy:     <%-9p [%-20p] >%-9p  -  %d,%d %dx%d\n",
-				ldpy->prev, ldpy, ldpy->next,
+		printf("  dpy:     <%-9p [%p->%p] >%-9p  -  %d,%d %dx%d\n",
+				ldpy->prev, ldpy, ldpy->data, ldpy->next,
 				geom->x, geom->y, geom->h, geom->w);
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next) {
 		col_t *col = lcol->data;
-		printf("  col:   <%-9p [%-20p] >%-9p  -  %dpx @ %d !!%p\n",
-				lcol->prev, lcol, lcol->next,
+		printf("    col:   <%-9p [%p->%p] >%-9p  -  %dpx @ %d !!%p\n",
+				lcol->prev, lcol, lcol->data, lcol->next,
 				col->width, col->mode, col->row);
 	for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 		row_t *row = lrow->data;
 		win_t *win = row->win;
-		printf("    win: <%-9p [%p>>%p] >%-9p  -  %4dpx focus=%d%d\n",
+		printf("      win: <%-9p [%p>>%p] >%-9p  -  %4dpx focus=%d%d\n",
 				lrow->prev, lrow, win, lrow->next,
 				win->h, col->row == row, wm_focus == win);
-	} } }
+	} } } }
 }
 
-static void cut_win(win_t *win)
+static void cut_win(tag_t *tag, win_t *win)
 {
 	list_t *ldpy, *lcol, *lrow;
-	searchl(wm_tag, win, &ldpy, &lcol, &lrow);
+	if (!searchl(tag, win, &ldpy, &lcol, &lrow))
+		return;
 	col_t  *col  = COL(lcol);
 	dpy_t  *dpy  = DPY(ldpy);
 
@@ -228,7 +233,7 @@ static void shift_window(win_t *win, int col, int row)
 {
 	if (!win) return;
 	printf("shift_window: %p - %+d,%+d\n", win, col, row);
-	print_txt(wm_tag);
+	print_txt();
 	printf("shift_window: >>>\n");
 	list_t *ldpy, *lcol, *lrow;
 	searchl(wm_tag, win, &ldpy, &lcol, &lrow);
@@ -273,12 +278,12 @@ static void shift_window(win_t *win, int col, int row)
 				return;
 			}
 		}
-		cut_win(win);
+		cut_win(wm_tag, win);
 		put_win(win, dpy, dst ? dst->data : NULL);
 		goto update;
 	}
 update:
-	print_txt(wm_tag);
+	print_txt();
 	wm_update();
 }
 
@@ -322,6 +327,47 @@ static void shift_focus(int cols, int rows)
 		else
 			sys_focus(wm->root);
 	}
+}
+
+static tag_t *tag_new(list_t *screens, int name)
+{
+	tag_t *tag = new0(tag_t);
+	tag->name  = name;
+	for (list_t *cur = screens; cur; cur = cur->next) {
+		dpy_t *dpy  = new0(dpy_t);
+		dpy->geom = cur->data;
+		tag->dpys = list_append(tag->dpys, dpy);
+	}
+	tag->dpy  = tag->dpys->data;
+	return tag;
+}
+
+static tag_t *tag_find(int name)
+{
+	tag_t *tag = NULL;
+	for (list_t *cur = wm->tags; cur; cur = cur->next)
+		if (name == TAG(cur)->name) {
+			tag = cur->data;
+			break;
+		}
+	if (!tag) {
+		tag = tag_new(wm->screens, name);
+		wm->tags = list_insert(wm->tags, tag);
+	}
+	return tag;
+}
+
+static void tag_set(win_t *win, int name)
+{
+	printf("tag_set: %p %d\n", win, name);
+	if (wm_tag->name == name)
+		return;
+	cut_win(wm_tag, win);
+	win_t *focus = wm_focus;
+
+	tag_t *tag = tag_find(name);
+	put_win(win, tag->dpy, tag->dpy->col);
+	set_focus(focus);
 }
 
 /* Window management functions */
@@ -378,10 +424,22 @@ void wm_update_dpy(dpy_t *dpy)
 		x += col->width + MARGIN;
 	}
 }
+
 void wm_update(void)
 {
-	for (list_t *cur = wm_tag->dpys; cur; cur = cur->next)
-		wm_update_dpy(cur->data);
+	/* Show/hide tags */
+	for (list_t *ltag =       wm ->tags; ltag; ltag = ltag->next)
+	for (list_t *ldpy = TAG(ltag)->dpys; ldpy; ldpy = ldpy->next)
+	for (list_t *lcol = DPY(ldpy)->cols; lcol; lcol = lcol->next)
+	for (list_t *lrow = COL(lcol)->rows; lrow; lrow = lrow->next)
+		sys_show(ROW(lrow)->win,
+			ltag->data == wm_tag ? st_show : st_hide);
+
+	/* Refrsh the display */
+	for (list_t *ldpy = wm_tag->dpys; ldpy; ldpy = ldpy->next)
+		wm_update_dpy(ldpy->data);
+	if (wm_focus)
+		set_focus(wm_focus);
 }
 
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
@@ -410,8 +468,10 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	if (mod.MODKEY) {
 		if (key == key_f1) return sys_raise(win), 1;
 		if (key == key_f2) return set_focus(win), 1;
+		if (key == key_f3) return sys_show(win, st_show), 1;
+		if (key == key_f4) return sys_show(win, st_hide), 1;
 		if (key == key_f5) return wm_update(),    1;
-		if (key == key_f6) return print_txt(wm_tag), 1;
+		if (key == key_f6) return print_txt(), 1;
 	}
 	if (key_mouse0 <= key && key <= key_mouse7)
 		sys_raise(win);
@@ -445,6 +505,18 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		case 't': return set_mode(win, tab),   1;
 		default: break;
 		}
+	}
+
+	/* Tag switching */
+	if (mod.MODKEY && '0' <= key && key <= '9') {
+		int name = key - '0';
+		if (mod.shift) {
+			tag_set(win, name);
+		} else {
+			printf("tag_switch: %d\n", name);
+			wm_tag = tag_find(name);
+		}
+		wm_update();
 	}
 
 	/* Focus change */
@@ -505,7 +577,7 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 void wm_insert(win_t *win)
 {
 	printf("wm_insert: %p\n", win);
-	print_txt(wm_tag);
+	print_txt();
 
 	/* Initialize window */
 	win->wm = new0(win_wm_t);
@@ -518,33 +590,21 @@ void wm_insert(win_t *win)
 	/* Arrange */
 	wm_update();
 	sys_focus(wm_focus);
-	print_txt(wm_tag);
+	print_txt();
 }
 
 void wm_remove(win_t *win)
 {
 	printf("wm_remove: %p\n", win);
-	print_txt(wm_tag);
-	cut_win(win);
+	print_txt();
+	for (list_t *tag = wm->tags; tag; tag = tag->next)
+		cut_win(tag->data, win);
 	if (wm_focus)
 		sys_focus(wm_focus);
 	else
 		sys_focus(wm->root);
 	wm_update();
-	print_txt(wm_tag);
-}
-
-tag_t *tag_new(list_t *screens, int name)
-{
-	tag_t *tag = new0(tag_t);
-	tag->name  = name;
-	for (list_t *cur = screens; cur; cur = cur->next) {
-		dpy_t *dpy  = new0(dpy_t);
-		dpy->geom = cur->data;
-		tag->dpys = list_append(tag->dpys, dpy);
-	}
-	tag->dpy  = tag->dpys->data;
-	return tag;
+	print_txt();
 }
 
 void wm_init(win_t *root)
@@ -558,9 +618,12 @@ void wm_init(win_t *root)
 	wm->tags    = list_insert(NULL, wm->tag);
 
 	Key_t keys_e[] = {key_enter, key_focus};
-	Key_t keys_s[] = {'h', 'j', 'k', 'l'};
+	Key_t keys_s[] = {'h', 'j', 'k', 'l',
+		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't',
-		key_f1, key_f2, key_f5, key_f6, key_mouse1, key_mouse3};
+		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+		key_f1, key_f2, key_f3, key_f4, key_f5, key_f6,
+		key_mouse1, key_mouse3};
 	for (int i = 0; i < countof(keys_e); i++)
 		sys_watch(root, keys_e[i],  MOD());
 	for (int i = 0; i < countof(keys_m); i++)
