@@ -12,7 +12,9 @@
 #include "sys.h"
 #include "wm.h"
 
+#ifndef BORDER
 #define BORDER 2
+#endif
 
 /* Internal structures */
 struct win_sys {

@@ -5,9 +5,15 @@
 #include "sys.h"
 #include "wm.h"
 
+#ifndef MODKEY
 #define MODKEY alt
+#endif
+#ifndef MARGIN
 #define MARGIN 0
+#endif
+#ifndef STACK
 #define STACK  25
+#endif
 
 /* Enums */
 typedef enum {
