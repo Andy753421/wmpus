@@ -38,7 +38,7 @@ typedef enum {
 } color_t;
 
 /* Global data */
-static void *win_cache;
+static void *cache;
 static Atom atoms[natoms];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
 static unsigned long colors[ncolors];
@@ -217,16 +217,16 @@ static win_t *win_find(Display *dpy, Window xid, int create)
 	win_sys_t sys = {.dpy=dpy, .xid=xid};
 	win_t     tmp = {.sys=&sys};
 	win_t **old = NULL, *new = NULL;
-	if ((old = tfind(&tmp, &win_cache, win_cmp)))
+	if ((old = tfind(&tmp, &cache, win_cmp)))
 		return *old;
 	if (create && (new = win_new(dpy,xid)))
-		tsearch(new, &win_cache, win_cmp);
+		tsearch(new, &cache, win_cmp);
 	return new;
 }
 
 static void win_remove(win_t *win)
 {
-	tdelete(win, &win_cache, win_cmp);
+	tdelete(win, &cache, win_cmp);
 	free(win->sys);
 	free(win);
 }

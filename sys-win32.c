@@ -25,8 +25,9 @@ typedef struct {
 } keymap_t;
 
 /* Global data */
-static int   shellhookid;
-static void *win_cache;
+static int    shellhookid;
+static void  *cache;
+static win_t *root;
 
 /* Conversion functions */
 static keymap_t key2vk[] = {
@@ -141,16 +142,16 @@ static win_t *win_find(HWND hwnd, int create)
 	win_sys_t sys = {.hwnd=hwnd};
 	win_t     tmp = {.sys=&sys};
 	win_t **old = NULL, *new = NULL;
-	if ((old = tfind(&tmp, &win_cache, win_cmp)))
+	if ((old = tfind(&tmp, &cache, win_cmp)))
 		return *old;
 	if (create && (new = win_new(hwnd,1)))
-		tsearch(new, &win_cache, win_cmp);
+		tsearch(new, &cache, win_cmp);
 	return new;
 }
 
 static void win_remove(win_t *win)
 {
-	tdelete(win, &win_cache, win_cmp);
+	tdelete(win, &cache, win_cmp);
 	free(win->sys);
 	free(win);
 }
@@ -178,20 +179,33 @@ LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 			msg, wParam, lParam,
 			st->vkCode, st->scanCode, st->flags,
 			key, mod2int(mod));
-	return wm_handle_key(win_focused(), key, mod, getptr())
+	return wm_handle_key(win_focused() ?: root, key, mod, getptr())
 		|| CallNextHookEx(0, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK MllProc(int msg, WPARAM wParam, LPARAM lParam)
 {
-	Key_t key = key_none;
-	mod_t mod = getmod();
+	Key_t  key = key_none;
+	mod_t  mod = getmod();
+	win_t *win = win_cursor();
+
+	/* Update modifiers */
 	switch (wParam) {
 	case WM_LBUTTONDOWN: mod.up = 0; key = key_mouse1; break;
 	case WM_LBUTTONUP:   mod.up = 1; key = key_mouse1; break;
 	case WM_RBUTTONDOWN: mod.up = 0; key = key_mouse3; break;
 	case WM_RBUTTONUP:   mod.up = 1; key = key_mouse3; break;
 	}
+
+	/* Check for focus-in/focus-out */
+	static win_t *old = NULL;
+	if (win && win != old) {
+		wm_handle_key(old, key_leave, mod, getptr());
+		wm_handle_key(win, key_enter, mod, getptr());
+	}
+	old = win;
+
+	/* Send mouse movement event */
 	if (wParam == WM_MOUSEMOVE)
 		return wm_handle_ptr(win_cursor(), getptr());
 	else if (key != key_none)
@@ -223,7 +237,7 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 		return 1;
 	case HSHELL_WINDOWACTIVATED:
 		printf("ShlProc: %p - window activated\n", hwnd);
-		return 1;
+		return 0;
 	default:
 		printf("ShlProc: %p - unknown msg, %d\n", hwnd, msg);
 		return 0;
@@ -301,13 +315,13 @@ void sys_show(win_t *win, state_t state)
 void sys_watch(win_t *win, Key_t key, mod_t mod)
 {
 	(void)key2w; // TODO
-	printf("sys_watch: %p\n", win);
+	//printf("sys_watch: %p\n", win);
 }
 
 void sys_unwatch(win_t *win, Key_t key, mod_t mod)
 {
 	(void)key2w; // TODO
-	printf("sys_unwatch: %p\n", win);
+	//printf("sys_unwatch: %p\n", win);
 }
 
 BOOL CALLBACK Mon(HMONITOR mon, HDC dc, LPRECT rect, LPARAM _screens)
@@ -371,7 +385,7 @@ win_t *sys_init(void)
 
 	/* Input hooks */
 	SetWindowsHookEx(WH_KEYBOARD_LL, KbdProc, hInst, 0);
-	//SetWindowsHookEx(WH_MOUSE_LL,    MllProc, hInst, 0);
+	SetWindowsHookEx(WH_MOUSE_LL,    MllProc, hInst, 0);
 	//SetWindowsHookEx(WH_SHELL,       ShlProc, hInst, 0);
 
 	/* Alternate ways to get input */
@@ -380,7 +394,7 @@ win_t *sys_init(void)
 	//if (!RegisterHotKey(NULL, 123, MOD_CONTROL, VK_LBUTTON))
 	//	printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
 
-	return win_new(hwnd,0);
+	return root = win_new(hwnd,0);
 }
 
 void sys_run(win_t *root)

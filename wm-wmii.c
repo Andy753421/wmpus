@@ -75,14 +75,17 @@ static wm_t  *wm;
 #define DPY(l) ((dpy_t*)(l)->data)
 #define TAG(l) ((tag_t*)(l)->data)
 
+#define tag_foreach(tag, dpy, col, row, win) \
+	for (list_t *dpy =     tag ->dpys; dpy; dpy = dpy->next) \
+	for (list_t *col = DPY(dpy)->cols; col; col = col->next) \
+	for (list_t *row = COL(col)->rows; row; row = row->next) \
+	for (win_t  *win = ROW(row)->win;  win; win = NULL)      \
+
 /* Helper functions */
 static int searchl(tag_t *tag, win_t *target,
 		list_t **_dpy, list_t **_col, list_t **_row)
 {
-	for (list_t *dpy =     tag ->dpys; dpy; dpy = dpy->next)
-	for (list_t *col = DPY(dpy)->cols; col; col = col->next)
-	for (list_t *row = COL(col)->rows; row; row = row->next) {
-		win_t *win = ROW(row)->win;
+	tag_foreach(tag, dpy, col, row, win) {
 		if (win == target) {
 			if (_dpy) *_dpy = dpy;
 			if (_col) *_col = col;
@@ -382,7 +385,7 @@ static void tag_set(win_t *win, int name)
 static void tag_switch(int name)
 {
 	printf("tag_switch: %d\n", name);
-	if (wm_col->rows == NULL)
+	if (wm_col == NULL || wm_row == NULL)
 		wm->tags = list_remove(wm->tags,
 				list_find(wm->tags, wm_tag));
 	wm_tag = tag_find(name);
@@ -399,23 +402,23 @@ void wm_update_dpy(dpy_t *dpy)
 	/* Scale horizontally */
 	x  = dpy->geom->x;
 	mx = dpy->geom->w - (list_length(dpy->cols)+1)*MARGIN;
-	for (list_t *lx = dpy->cols; lx; lx = lx->next)
-		tx += COL(lx)->width;
-	for (list_t *lx = dpy->cols; lx; lx = lx->next)
-		COL(lx)->width *= (float)mx / tx;
+	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next)
+		tx += COL(lcol)->width;
+	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next)
+		COL(lcol)->width *= (float)mx / tx;
 
 	/* Scale each column vertically */
-	for (list_t *lx = dpy->cols; lx; lx = lx->next) {
-		col_t *col = lx->data;
+	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next) {
+		col_t *col = lcol->data;
 		ty = 0;
-		for (list_t *ly = col->rows; ly; ly = ly->next)
-			ty += ROW(ly)->height;
+		for (list_t *lrow = col->rows; lrow; lrow = lrow->next)
+			ty += ROW(lrow)->height;
 		y  = dpy->geom->y;
 		my = dpy->geom->h - (list_length(col->rows)+1)*MARGIN;
-		sy = my              - (list_length(col->rows)-1)*STACK;
-		for (list_t *ly = col->rows; ly; ly = ly->next) {
-			win_t *win = ROW(ly)->win;
-			win->h = ROW(ly)->height;
+		sy = my           - (list_length(col->rows)-1)*STACK;
+		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
+			win_t *win = ROW(lrow)->win;
+			win->h = ROW(lrow)->height;
 			int height = 0;
 			switch (col->mode) {
 			case split:
@@ -424,7 +427,13 @@ void wm_update_dpy(dpy_t *dpy)
 				height = win->h;
 				break;
 			case stack:
-				height = col->row->win == win ? sy : STACK;
+				if (lrow->next && ROW(lrow->next)->win == col->row->win) {
+					/* Hack to prevent flashing */
+					win_t *next = ROW(lrow->next)->win;
+					sys_move(next, x+MARGIN, y+MARGIN+STACK+MARGIN,
+						col->width, sy);
+				}
+				height = win == col->row->win ? sy : STACK;
 				sys_move(win, x+MARGIN, y+MARGIN,
 					col->width, height);
 				break;
@@ -437,7 +446,7 @@ void wm_update_dpy(dpy_t *dpy)
 				break;
 			}
 			y += height + MARGIN;
-			ROW(ly)->height = win->h;
+			ROW(lrow)->height = win->h;
 		}
 		x += col->width + MARGIN;
 	}
@@ -446,12 +455,12 @@ void wm_update_dpy(dpy_t *dpy)
 void wm_update(void)
 {
 	/* Show/hide tags */
-	for (list_t *ltag =       wm ->tags; ltag; ltag = ltag->next)
-	for (list_t *ldpy = TAG(ltag)->dpys; ldpy; ldpy = ldpy->next)
-	for (list_t *lcol = DPY(ldpy)->cols; lcol; lcol = lcol->next)
-	for (list_t *lrow = COL(lcol)->rows; lrow; lrow = lrow->next)
-		sys_show(ROW(lrow)->win,
-			ltag->data == wm_tag ? st_show : st_hide);
+	tag_foreach(wm_tag, dpy, col, row, win)
+		sys_show(win, st_show);
+	for (list_t *tag = wm ->tags; tag; tag = tag->next)
+		tag_foreach(TAG(tag), dpy, col, row, win)
+			if (tag->data != wm_tag)
+				sys_show(win, st_hide);
 
 	/* Refrsh the display */
 	for (list_t *ldpy = wm_tag->dpys; ldpy; ldpy = ldpy->next)
@@ -472,9 +481,9 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 
 	/* Mouse movement */
 	if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
-		return set_move(win,ptr,none), 1;
+		return set_move(win,ptr,none),   0;
 	else if (key == key_mouse1 && mod.MODKEY)
-		return set_move(win,ptr,move), 1;
+		return set_move(win,ptr,move),   1;
 	else if (key == key_mouse3 && mod.MODKEY)
 		return set_move(win,ptr,resize), 1;
 
@@ -484,10 +493,12 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 
 	/* Misc */
 	if (mod.MODKEY) {
+#ifdef DEBUG
 		if (key == key_f1) return sys_raise(win), 1;
 		if (key == key_f2) return set_focus(win), 1;
 		if (key == key_f3) return sys_show(win, st_show), 1;
 		if (key == key_f4) return sys_show(win, st_hide), 1;
+#endif
 		if (key == key_f5) return wm_update(),    1;
 		if (key == key_f6) return print_txt(),    1;
 	}
@@ -645,7 +656,7 @@ void wm_init(win_t *root)
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-		/*key_f1, key_f2, key_f3, key_f4,*/ key_f5, key_f6,
+		key_f1, key_f2, key_f3, key_f4, key_f5, key_f6,
 		key_mouse1, key_mouse3};
 	for (int i = 0; i < countof(keys_e); i++)
 		sys_watch(root, keys_e[i],  MOD());
