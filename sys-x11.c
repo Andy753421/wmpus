@@ -44,6 +44,7 @@ static void *cache;
 static Atom atoms[natoms];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
 static unsigned long colors[ncolors];
+static list_t *screens;
 
 /* Conversion functions */
 static keymap_t key2sym[] = {
@@ -133,6 +134,21 @@ static Window getfocus(win_t *root, XEvent *event)
 }
 
 /* Helpers */
+static int copy_strut(win_t *to, win_t *from, int scale)
+{
+	int left   = from->sys->strut.left;
+	int right  = from->sys->strut.right;
+	int top    = from->sys->strut.top;
+	int bottom = from->sys->strut.bottom;
+	if (left == 0 && right == 0 && top == 0 && bottom == 0)
+		return 0;
+	to->x += scale*(left      );
+	to->y += scale*(top       );
+	to->w -= scale*(left+right);
+	to->h -= scale*(top+bottom);
+	return 1;
+}
+
 static int add_strut(win_t *root, win_t *win)
 {
 	/* Get X11 strut data */
@@ -146,38 +162,20 @@ static int add_strut(win_t *root, win_t *win)
 	if (status != Success || ret_size != 32 || ret_items != 4)
 		return 0;
 
-	int left   = ((int*)xdata)[0];
-	int right  = ((int*)xdata)[1];
-	int top    = ((int*)xdata)[2];
-	int bottom = ((int*)xdata)[3];
-	if (left == 0 && right == 0 && top == 0 && bottom == 0)
-		return 0;
-
-	win->sys->strut.left   = left;
-	win->sys->strut.right  = right;
-	win->sys->strut.top    = top;
-	win->sys->strut.bottom = bottom;
-	root->x += left;
-	root->y += top;
-	root->w -= left+right;
-	root->h -= top+bottom;
-	return 1;
+	win->sys->strut.left   = ((int*)xdata)[0];
+	win->sys->strut.right  = ((int*)xdata)[1];
+	win->sys->strut.top    = ((int*)xdata)[2];
+	win->sys->strut.bottom = ((int*)xdata)[3];
+	for (list_t *cur = screens; cur; cur = cur->next)
+		copy_strut(cur->data, win, 1);
+	return copy_strut(root, win, 1);
 }
 
 static int del_strut(win_t *root, win_t *win)
 {
-	int left   = win->sys->strut.left;
-	int right  = win->sys->strut.right;
-	int top    = win->sys->strut.top;
-	int bottom = win->sys->strut.bottom;
-	if (left == 0 && right == 0 && top == 0 && bottom == 0)
-		return 0;
-
-	root->x -= left;
-	root->y -= top;
-	root->w += left+right;
-	root->h += top+bottom;
-	return 1;
+	for (list_t *cur = screens; cur; cur = cur->next)
+		copy_strut(cur->data, win, -1);
+	return copy_strut(root, win, -1);
 }
 
 /* Window functions */
@@ -487,23 +485,25 @@ void sys_unwatch(win_t *win, Key_t key, mod_t mod)
 
 list_t *sys_info(win_t *win)
 {
-	int n;
-	XineramaScreenInfo *info = NULL;
-	if (XineramaIsActive(win->sys->dpy))
-		info = XineramaQueryScreens(win->sys->dpy, &n);
-	if (!info) {
-		win_t *screen = new0(win_t);
-		*screen = *win;
-		return list_insert(NULL, screen);
-	}
-	list_t *screens = NULL;
-	for (int i = 0; i < n; i++) {
-		win_t *screen = new0(win_t);
-		screen->x = info[i].x_org;
-		screen->y = info[i].y_org;
-		screen->w = info[i].width;
-		screen->h = info[i].height;
-		screens = list_append(screens, screen);
+	/* Use global copy of screens so we can add struts */
+	if (screens == NULL) {
+		int n;
+		XineramaScreenInfo *info = NULL;
+		if (XineramaIsActive(win->sys->dpy))
+			info = XineramaQueryScreens(win->sys->dpy, &n);
+		if (!info) {
+			win_t *screen = new0(win_t);
+			*screen = *win;
+			return list_insert(NULL, screen);
+		}
+		for (int i = 0; i < n; i++) {
+			win_t *screen = new0(win_t);
+			screen->x = info[i].x_org;
+			screen->y = info[i].y_org;
+			screen->w = info[i].width;
+			screen->h = info[i].height;
+			screens = list_append(screens, screen);
+		}
 	}
 	return screens;
 }
