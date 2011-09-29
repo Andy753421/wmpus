@@ -477,12 +477,14 @@ static void wm_update_dpy(dpy_t *dpy)
 	/* Scale each column vertically */
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next) {
 		col_t *col = lcol->data;
+		int nrows = list_length(col->rows);
 		ty = 0;
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next)
 			ty += ROW(lrow)->height;
 		y  = dpy->geom->y;
-		my = dpy->geom->h - (list_length(col->rows)+1)*MARGIN;
-		sy = my           - (list_length(col->rows)-1)*STACK;
+		my = dpy->geom->h - (MARGIN + (nrows-1)* MARGIN    + MARGIN);
+		sy = dpy->geom->h - (MARGIN + (nrows-1)*(MARGIN/2) + MARGIN)
+		                  -           (nrows-1)* STACK;
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 			win_t *win = ROW(lrow)->win;
 			win->h = ROW(lrow)->height;
@@ -492,6 +494,7 @@ static void wm_update_dpy(dpy_t *dpy)
 				sys_move(win, x+MARGIN, y+MARGIN,
 					col->width, win->h * ((float)my / ty));
 				height = win->h;
+				y += height + MARGIN;
 				break;
 			case stack:
 				if (lrow->next && ROW(lrow->next)->win == col->row->win) {
@@ -503,6 +506,7 @@ static void wm_update_dpy(dpy_t *dpy)
 				height = win == col->row->win ? sy : STACK;
 				sys_move(win, x+MARGIN, y+MARGIN,
 					col->width, height);
+				y += height + (MARGIN/2);
 				break;
 			case max:
 			case tab:
@@ -512,7 +516,6 @@ static void wm_update_dpy(dpy_t *dpy)
 					sys_raise(win);
 				break;
 			}
-			y += height + MARGIN;
 			ROW(lrow)->height = win->h;
 		}
 		x += col->width + MARGIN;
