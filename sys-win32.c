@@ -354,12 +354,12 @@ win_t *sys_init(void)
 	HINSTANCE hInst = GetModuleHandle(NULL);
 	HWND      hwnd  = NULL;
 
-	/* Setup AWM window class */
+	/* Setup window class */
 	WNDCLASSEX wc    = {
 		.cbSize        = sizeof(WNDCLASSEX),
 		.lpfnWndProc   = WndProc,
 		.hInstance     = hInst,
-		.lpszClassName = "awm_class",
+		.lpszClassName = "wmpus_class",
 	};
 	if (!RegisterClassEx(&wc))
 		printf("sys_init: Error Registering Class - %lu\n", GetLastError());
@@ -369,7 +369,7 @@ win_t *sys_init(void)
         SystemParametersInfo(SPI_GETWORKAREA, 0, &rc, 0);
 
 	/* Create shell hook window */
-	if (!(hwnd = CreateWindowEx(0, "awm_class", "awm", 0,
+	if (!(hwnd = CreateWindowEx(0, "wmpus_class", "wmpus", 0,
 			rc.left, rc.top, rc.right-rc.left, rc.bottom-rc.top,
 			HWND_MESSAGE, NULL, hInst, NULL)))
 		printf("sys_init: Error Creating Shell Hook Window - %lu\n", GetLastError());

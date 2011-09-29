@@ -1,6 +1,7 @@
 *~
 *.o
 *.swp
-awm
-awm.exe
+local
+wmpus
+wmpus.exe
 tags
