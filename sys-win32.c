@@ -324,9 +324,13 @@ void sys_focus(win_t *win)
 	 * certain circumstances and instead flashes the windows toolbar icon.
 	 * Attaching the thread input queues avoids this behavior */
 	DWORD oldId = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
-	DWORD newId = GetWindowThreadProcessId(win->sys->hwnd,        NULL);
+	DWORD newId = GetCurrentThreadId();
 	AttachThreadInput(oldId, newId, TRUE);
+
+	BringWindowToTop(win->sys->hwnd);
 	SetForegroundWindow(win->sys->hwnd);
+	SetFocus(win->sys->hwnd);
+
 	AttachThreadInput(oldId, newId, FALSE);
 }
 
