@@ -550,12 +550,15 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	//	mod.win   ? 'w' : '-');
 
 	/* Mouse movement */
-	if (key_mouse0 <= key && key <= key_mouse7 && mod.up)
-		return set_move(win,ptr,none),   0;
-	else if (key == key_mouse1 && mod.MODKEY)
-		return set_move(win,ptr,move),   1;
-	else if (key == key_mouse3 && mod.MODKEY)
-		return set_move(win,ptr,resize), 1;
+	if (key_mouse0 <= key && key <= key_mouse7) {
+		if (key == key_mouse1 && mod.MODKEY && !mod.up)
+			return set_move(win,ptr,move),   1;
+		if (key == key_mouse3 && mod.MODKEY && !mod.up)
+			return set_move(win,ptr,resize), 1;
+		if (move_mode != none && mod.up)
+			return set_move(win,ptr,none),   1;
+		return 0;
+	}
 
 	/* Only handle key-down */
 	if (mod.up)
