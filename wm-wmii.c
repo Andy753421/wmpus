@@ -560,6 +560,8 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 			return set_move(win,ptr,resize), 1;
 		if (move_mode != none && mod.up)
 			return set_move(win,ptr,none),   1;
+		if (key == key_mouse1 && !mod.up && win->h == STACK)
+			return wm_update(),              0;
 		return 0;
 	}
 
