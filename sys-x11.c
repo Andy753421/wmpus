@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2011 Andy Spencer <andy753421@gmail.com>
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <search.h>
@@ -133,8 +150,10 @@ static Window getfocus(win_t *root, XEvent *event)
 	return focus;
 }
 
-/* Helpers */
-static int copy_strut(win_t *to, win_t *from, int scale)
+/* Strut functions
+ *   Struts are spaces at the edges of the screen that are used by
+ *   toolbars and statusbars such as dzen. */
+static int strut_copy(win_t *to, win_t *from, int scale)
 {
 	int left   = from->sys->strut.left;
 	int right  = from->sys->strut.right;
@@ -149,7 +168,7 @@ static int copy_strut(win_t *to, win_t *from, int scale)
 	return 1;
 }
 
-static int add_strut(win_t *root, win_t *win)
+static int strut_add(win_t *root, win_t *win)
 {
 	/* Get X11 strut data */
 	Atom ret_type;
@@ -167,15 +186,15 @@ static int add_strut(win_t *root, win_t *win)
 	win->sys->strut.top    = ((int*)xdata)[2];
 	win->sys->strut.bottom = ((int*)xdata)[3];
 	for (list_t *cur = screens; cur; cur = cur->next)
-		copy_strut(cur->data, win, 1);
-	return copy_strut(root, win, 1);
+		strut_copy(cur->data, win, 1);
+	return strut_copy(root, win, 1);
 }
 
-static int del_strut(win_t *root, win_t *win)
+static int strut_del(win_t *root, win_t *win)
 {
 	for (list_t *cur = screens; cur; cur = cur->next)
-		copy_strut(cur->data, win, -1);
-	return copy_strut(root, win, -1);
+		strut_copy(cur->data, win, -1);
+	return strut_copy(root, win, -1);
 }
 
 /* Window functions */
@@ -241,7 +260,7 @@ static int win_viewable(win_t *win)
 }
 
 /* Drawing functions */
-unsigned long get_color(Display *dpy, const char *name)
+static unsigned long get_color(Display *dpy, const char *name)
 {
 	XColor color;
 	int screen = DefaultScreen(dpy);
@@ -322,7 +341,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,ev->xunmap.window,0)) &&
 		     win->sys->state == st_show) {
-			if (!del_strut(root, win))
+			if (!strut_del(root, win))
 				wm_remove(win);
 			else
 				wm_update();
@@ -346,7 +365,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 			.height = cre->height,
 		});
 
-		/* This seems necessasairy for, but causes flicker
+		/* This seems necessary for, but causes flicker
 		 * there could be a better way to do this */
 		if ((win = win_find(dpy,ev->xmaprequest.window,0)))
 			sys_move(win, win->x, win->y, win->w, win->h);
@@ -354,7 +373,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
 		if ((win = win_find(dpy,ev->xmaprequest.window,1))) {
-			if (!add_strut(root, win))
+			if (!strut_add(root, win))
 				wm_insert(win);
 			else
 				wm_update();
@@ -381,9 +400,9 @@ static int xerror(Display *dpy, XErrorEvent *err)
 	return xerrorxlib(dpy, err);
 }
 
-/*****************
- * Sys functions *
- *****************/
+/********************
+ * System functions *
+ ********************/
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	//printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
@@ -393,7 +412,7 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	w      = MAX(w-b,1); h      = MAX(h-b,1);
 	XMoveResizeWindow(win->sys->dpy, win->sys->xid, x, y, w, h);
 
-	/* Flush events, so moving window doesn't cuase re-focus
+	/* Flush events, so moving window doesn't cause re-focus
 	 * There's probably a better way to do this */
 	XEvent ev;
 	XSync(win->sys->dpy, False);
@@ -529,7 +548,7 @@ win_t *sys_init(void)
 	colors[clr_urgent]  = get_color(dpy, "#ff0000");
 	printf("colors = #%06lx #%06lx #%06lx\n", colors[0], colors[1], colors[2]);
 
-	/* Selec Window Managmenet events */
+	/* Select window management events */
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	xerrorxlib = XSetErrorHandler(xerror);
@@ -546,7 +565,7 @@ void sys_run(win_t *root)
 				&par, &xid, &kids, &nkids))
 		for(int i = 0; i < nkids; i++) {
 			win_t *win = win_find(root->sys->dpy, kids[i], 1);
-			if (win && win_viewable(win) && !add_strut(root,win))
+			if (win && win_viewable(win) && !strut_add(root,win))
 				wm_insert(win);
 		}
 	wm_update(); // For struts

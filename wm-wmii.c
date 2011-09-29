@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2011 Andy Spencer <andy753421@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -24,40 +41,62 @@ typedef enum {
 	split, stack, max, tab
 } mode_t;
 
-
 /* Window structure types */
 struct win_wm { };
 
 typedef struct {
-	win_t  *win;
-	int     height;
+	win_t  *win;     // the window
+	int     height;  // win height in _this_ tag
 } row_t;
 
 typedef struct {
-	list_t *rows; // of row_t
-	row_t  *row;
-	int     width;
-	mode_t  mode;
+	list_t *rows;    // of row_t
+	row_t  *row;     // focused row
+	int     width;   // column width
+	mode_t  mode;    // display mode
 } col_t;
 
 typedef struct {
-	list_t *cols; // of col_t
-	col_t  *col;
-	win_t  *geom;
+	list_t *cols;    // of col_t
+	col_t  *col;     // focused col
+	win_t  *geom;    // display size and position
 } dpy_t;
 
 typedef struct {
-	list_t *dpys; // of dpy_t
-	dpy_t  *dpy;
-	int     name;
+	list_t *dpys;    // of dpy_t
+	dpy_t  *dpy;     // focused dpy
+	int     name;    // tag name
 } tag_t;
 
 typedef struct {
-	list_t *tags; // of tag_t
-	tag_t  *tag;
-	win_t  *root;
-	list_t *screens;
+	list_t *tags;    // of tag_t
+	tag_t  *tag;     // focused tag
+	win_t  *root;    // root/background window
+	list_t *screens; // display geometry
 } wm_t;
+
+#define WIN(node) ((win_t*)(node)->data)
+#define ROW(node) ((row_t*)(node)->data)
+#define COL(node) ((col_t*)(node)->data)
+#define DPY(node) ((dpy_t*)(node)->data)
+#define TAG(node) ((tag_t*)(node)->data)
+
+#define tag_foreach(tag, dpy, col, row, win) \
+	for (list_t *dpy =     tag ->dpys; dpy; dpy = dpy->next) \
+	for (list_t *col = DPY(dpy)->cols; col; col = col->next) \
+	for (list_t *row = COL(col)->rows; row; row = row->next) \
+	for (win_t  *win = ROW(row)->win;  win; win = NULL)      \
+
+/* Window management data
+ *   wm_* macros represent the currently focused item
+ *   _only_ wm_focus protects against NULL pointers */
+static wm_t *wm;
+#define wm_win   wm->tag->dpy->col->row->win
+#define wm_row   wm->tag->dpy->col->row
+#define wm_col   wm->tag->dpy->col
+#define wm_dpy   wm->tag->dpy
+#define wm_tag   wm->tag
+#define wm_focus (wm_tag && wm_dpy && wm_col && wm_row ? wm_win : NULL)
 
 /* Mouse drag data */
 static drag_t  move_mode;
@@ -66,28 +105,11 @@ static list_t *move_lcol;
 static ptr_t   move_prev;
 static struct { int v, h; } move_dir;
 
-/* Window management data */
-static wm_t  *wm;
-#define wm_win   wm->tag->dpy->col->row->win
-#define wm_row   wm->tag->dpy->col->row
-#define wm_col   wm->tag->dpy->col
-#define wm_dpy   wm->tag->dpy
-#define wm_tag   wm->tag
-#define wm_focus (wm_tag && wm_dpy && wm_col && wm_row ? wm_win : NULL)
-
-#define WIN(l) ((win_t*)(l)->data)
-#define ROW(l) ((row_t*)(l)->data)
-#define COL(l) ((col_t*)(l)->data)
-#define DPY(l) ((dpy_t*)(l)->data)
-#define TAG(l) ((tag_t*)(l)->data)
-
-#define tag_foreach(tag, dpy, col, row, win) \
-	for (list_t *dpy =     tag ->dpys; dpy; dpy = dpy->next) \
-	for (list_t *col = DPY(dpy)->cols; col; col = col->next) \
-	for (list_t *row = COL(col)->rows; row; row = row->next) \
-	for (win_t  *win = ROW(row)->win;  win; win = NULL)      \
-
-/* Helper functions */
+/********************
+ * Helper functions *
+ ********************/
+/* Search for the target window in a given tag
+ * win may exist in other tags as well */
 static int searchl(tag_t *tag, win_t *target,
 		list_t **_dpy, list_t **_col, list_t **_row)
 {
@@ -115,6 +137,7 @@ static int search(tag_t *tag, win_t *target,
 	return 0;
 }
 
+/* Set the mode for the windows column in the current tag */
 static void set_mode(win_t *win, mode_t mode)
 {
 	col_t *col;
@@ -131,6 +154,8 @@ static void set_mode(win_t *win, mode_t mode)
 	wm_update();
 }
 
+/* Focus the window in the current tag and record
+ * it as the currently focused window */
 static void set_focus(win_t *win)
 {
 	if (win == NULL || win == wm->root) {
@@ -157,6 +182,7 @@ static void set_focus(win_t *win)
 	sys_focus(win);
 }
 
+/* Save mouse start location when moving/resizing windows */
 static void set_move(win_t *win, ptr_t ptr, drag_t drag)
 {
 	printf("set_move: %d - %p@%d,%d\n",
@@ -165,13 +191,15 @@ static void set_move(win_t *win, ptr_t ptr, drag_t drag)
 	if (drag == move || drag == resize) {
 		searchl(wm_tag, win, NULL, &move_lcol, &move_lrow);
 		move_prev = ptr;
-		int my = win->y + (win->h/2);
-		int mx = win->x + (win->w/2);
-		move_dir.v = ptr.ry < my ? -1 : +1;
-		move_dir.h = ptr.rx < mx ? -1 : +1;
+		int midy = win->y + (win->h/2);
+		int midx = win->x + (win->w/2);
+		move_dir.v = ptr.ry < midy ? -1 : +1;
+		move_dir.h = ptr.rx < midx ? -1 : +1;
 	}
 }
 
+/* Print a text representation of the window layout
+ * Quite useful for debugging */
 static void print_txt(void)
 {
 	for (list_t *ltag = wm->tags; ltag; ltag = ltag->next) {
@@ -199,6 +227,9 @@ static void print_txt(void)
 	} } } }
 }
 
+/* Cleanly remove a window from a tag
+ *   Determines the new focused row/col
+ *   Prunes empty lists */
 static void cut_win(tag_t *tag, win_t *win)
 {
 	list_t *ldpy, *lcol, *lrow;
@@ -218,6 +249,9 @@ static void cut_win(tag_t *tag, win_t *win)
 	}
 }
 
+/* Insert a window at a given location
+ *   The window is added immediately after the
+ *   columns currently focused row */
 static void put_win(win_t *win, tag_t *tag, dpy_t *dpy, col_t *col)
 {
 	row_t *row = new0(row_t);
@@ -246,6 +280,9 @@ static void put_win(win_t *win, tag_t *tag, dpy_t *dpy, col_t *col)
 	}
 }
 
+/* Move a window up, down, left, or right
+ *   This handles moving with a column, between
+ *   columns, and between multiple monitors. */
 static void shift_window(win_t *win, int col, int row)
 {
 	if (!win) return;
@@ -257,6 +294,7 @@ static void shift_window(win_t *win, int col, int row)
 		return;
 	dpy_t *dpy = ldpy->data;
 	if (row != 0) {
+		/* Move with a column, just swap rows */
 		list_t *src = lrow, *dst = NULL;
 		if (row < 0) dst = src->prev;
 		if (row > 0) dst = src->next;
@@ -268,18 +306,24 @@ static void shift_window(win_t *win, int col, int row)
 			goto update;
 		}
 	} else {
+		/* Moving between columns */
 		int onlyrow = !lrow->prev && !lrow->next;
 		list_t *src = lcol, *dst = NULL;
 		if (col < 0) {
 			if (src->prev) {
+				/* Normal move between columns */
 				dst = src->prev;
 			} else if (!onlyrow) {
+				/* Create new column */
 				dpy->cols = list_insert(dpy->cols, new0(col_t));
 				dst = src->prev;
 			} else if (ldpy->prev) {
+				/* Move to next monitor */
 				dpy = ldpy->prev->data;
 				dst = list_last(dpy->cols);
 			} else {
+				/* We, shall, not, be,
+				 * we shall not be moved */
 				return;
 			}
 		}
@@ -305,6 +349,7 @@ update:
 	wm_update();
 }
 
+/* Get next/prev item, with wraparound */
 static list_t *get_next(list_t *list, int forward)
 {
 	list_t *next = forward ? list->next : list->prev;
@@ -315,10 +360,13 @@ static list_t *get_next(list_t *list, int forward)
 	}
 	return next;
 }
+
+/* Move keyboard focus in a given direction */
 static void shift_focus(int cols, int rows)
 {
 	printf("shift_focus: %+d,%+d\n", cols, rows);
 	if (rows != 0 && wm_focus) {
+		/* Move focus up/down */
 		list_t *dpy, *col, *row;
 		if (!searchl(wm_tag, wm_focus, &dpy, &col, &row))
 			return;
@@ -328,15 +376,19 @@ static void shift_focus(int cols, int rows)
 			wm_update();
 	}
 	if (cols != 0) {
+		/* Move focus left/right */
 		list_t *dpy, *col, *row, *ndpy, *ncol = NULL;
 		if (wm_focus) {
+			/* Currently focused on a window */
 			if (!searchl(wm_tag, wm_focus, &dpy, &col, &row))
 				return;
 			ncol = cols > 0 ? col->next : col->prev;
 		} else {
+			/* Currently focused on an empty display */
 			dpy = list_find(wm_tag->dpys, wm_dpy);
 		}
 		if (ncol == NULL) {
+			/* Moving focus to a different display */
 			ndpy = get_next(dpy, cols > 0);
 			ncol = cols > 0 ? DPY(ndpy)->cols :
 				list_last(DPY(ndpy)->cols);
@@ -349,6 +401,7 @@ static void shift_focus(int cols, int rows)
 	}
 }
 
+/* Allocate a new tag */
 static tag_t *tag_new(list_t *screens, int name)
 {
 	tag_t *tag = new0(tag_t);
@@ -362,6 +415,9 @@ static tag_t *tag_new(list_t *screens, int name)
 	return tag;
 }
 
+/* Search for a tag
+ *   If it does not exist it is based on the
+ *   display geometry in wm->screens */
 static tag_t *tag_find(int name)
 {
 	tag_t *tag = NULL;
@@ -377,6 +433,8 @@ static tag_t *tag_find(int name)
 	return tag;
 }
 
+/* Move the window from the current tag to the new tag
+ *   Unlike wmii, only remove the current tag, not all tags */
 static void tag_set(win_t *win, int name)
 {
 	printf("tag_set: %p %d\n", win, name);
@@ -388,6 +446,7 @@ static void tag_set(win_t *win, int name)
 	set_focus(wm_focus);
 }
 
+/* Switch to a different tag */
 static void tag_switch(int name)
 {
 	printf("tag_switch: %d\n", name);
@@ -397,13 +456,15 @@ static void tag_switch(int name)
 	wm_tag = tag_find(name);
 }
 
-/* Window management functions */
-void wm_update_dpy(dpy_t *dpy)
+/* Tile all windows in the given display
+ *   This performs all the actual window tiling
+ *   Currently supports  split, stack and maximized modes */
+static void wm_update_dpy(dpy_t *dpy)
 {
 	int  x=0,  y=0; // Current window top-left position
-	int tx=0, ty=0; // Total x/y size
-	int mx=0, my=0; // Maximum x/y size (screen size)
-	int       sy=0; // Size of focused stack window
+	int tx=0, ty=0; // Total size (sum of initial col widths and row heights w/o margin)
+	int mx=0, my=0; // Maximum usable size (screen size minus margins)
+	int       sy=0; // Stack size (height of focused stack window)
 
 	/* Scale horizontally */
 	x  = dpy->geom->x;
@@ -458,6 +519,9 @@ void wm_update_dpy(dpy_t *dpy)
 	}
 }
 
+/*******************************
+ * Window management functions *
+ *******************************/
 void wm_update(void)
 {
 	/* Show/hide tags */
@@ -468,7 +532,7 @@ void wm_update(void)
 			if (tag->data != wm_tag)
 				sys_show(win, st_hide);
 
-	/* Refrsh the display */
+	/* Refresh the display */
 	for (list_t *ldpy = wm_tag->dpys; ldpy; ldpy = ldpy->next)
 		wm_update_dpy(ldpy->data);
 	if (wm_focus)
@@ -636,7 +700,6 @@ void wm_remove(win_t *win)
 	wm_update();
 	print_txt();
 }
-
 void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);

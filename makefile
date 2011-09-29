@@ -1,27 +1,18 @@
-WM=wmii
+WM     ?= wmii
+SYS    ?= x11
+CFLAGS ?= -g -Wall -Werror
 
-SYS=x11
-CC=gcc
-PROG=wmpus
-CFLAGS=-g -Werror -Wall
-LIBS=-Wl,--as-needed -lX11 -lXinerama
-TEST=DISPLAY=:2.0
-
-WIN32?=
-ifdef WIN32
-SYS=win32
-CC=i686-pc-mingw32-gcc
-CFLAGS=-g -Werror -Wall -D_NO_OLDNAMES -DMARGIN=15
-LIBS=
-PROG=wmpus.exe
-TEST=cp -t /t/htdocs/temp
+ifeq ($(SYS),x11)
+CC      = gcc
+LIBS   += -lX11 -lXinerama
+PROG    = wmpus
 endif
 
-test: $(PROG)
-	$(TEST) ./$<
-
-debug: $(PROG)
-	$(TEST) gdb ./$<
+ifeq ($(SYS),win32)
+CC      = i686-pc-mingw32-gcc
+CFLAGS += -D_NO_OLDNAMES -DMARGIN=15
+PROG    = wmpus.exe
+endif
 
 $(PROG): main.o util.o sys-$(SYS).o wm-$(WM).o
 	$(CC) $(CFLAGS) -o $@ $+ $(LIBS)
@@ -30,4 +21,4 @@ $(PROG): main.o util.o sys-$(SYS).o wm-$(WM).o
 	$(CC) --std=gnu99 $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(PROG) *.o
+	rm -f wmpus *.exe *.o

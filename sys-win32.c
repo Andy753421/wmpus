@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2011 Andy Spencer <andy753421@gmail.com>
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -99,7 +116,7 @@ static ptr_t getptr(void)
 	return (ptr_t){-1, -1, wptr.x, wptr.y};
 }
 
-/* Helpers */
+/* Window functions */
 static win_t *win_new(HWND hwnd, int checkwin)
 {
 	if (checkwin) {
@@ -259,9 +276,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-/*****************
- * Sys functions *
- *****************/
+BOOL CALLBACK MonProc(HMONITOR mon, HDC dc, LPRECT rect, LPARAM _screens)
+{
+	MONITORINFO info = {.cbSize=sizeof(MONITORINFO)};
+	GetMonitorInfo(mon, &info);
+	RECT *work = &info.rcWork;
+
+	list_t **screens = (list_t**)_screens;
+	win_t *screen = new0(win_t);
+	screen->x = work->left;
+	screen->y = work->top;
+	screen->w = work->right  - work->left;
+	screen->h = work->bottom - work->top;
+	*screens = list_append(*screens, screen);
+	printf("mon_proc: %d,%d %dx%d\n",
+		screen->x, screen->y, screen->w, screen->h);
+	return TRUE;
+}
+
+/********************
+ * System functions *
+ ********************/
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
@@ -286,8 +321,8 @@ void sys_focus(win_t *win)
 	printf("sys_focus: %p\n", win);
 
 	/* Windows prevents a thread from using SetForegroundInput under
-	 * certain circumstnaces and instead flashes the windows toolbar icon.
-	 * Attaching the htread input queues avoids this behavior */
+	 * certain circumstances and instead flashes the windows toolbar icon.
+	 * Attaching the thread input queues avoids this behavior */
 	DWORD oldId = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
 	DWORD newId = GetWindowThreadProcessId(win->sys->hwnd,        NULL);
 	AttachThreadInput(oldId, newId, TRUE);
@@ -324,28 +359,10 @@ void sys_unwatch(win_t *win, Key_t key, mod_t mod)
 	//printf("sys_unwatch: %p\n", win);
 }
 
-BOOL CALLBACK Mon(HMONITOR mon, HDC dc, LPRECT rect, LPARAM _screens)
-{
-	MONITORINFO info = {.cbSize=sizeof(MONITORINFO)};
-	GetMonitorInfo(mon, &info);
-	RECT *work = &info.rcWork;
-
-	list_t **screens = (list_t**)_screens;
-	win_t *screen = new0(win_t);
-	screen->x = work->left;
-	screen->y = work->top;
-	screen->w = work->right  - work->left;
-	screen->h = work->bottom - work->top;
-	*screens = list_append(*screens, screen);
-	printf("mon_proc: %d,%d %dx%d\n",
-		screen->x, screen->y, screen->w, screen->h);
-	return TRUE;
-}
-
 list_t *sys_info(win_t *win)
 {
 	list_t *screens = NULL;
-	EnumDisplayMonitors(NULL, NULL, Mon, (LPARAM)&screens);
+	EnumDisplayMonitors(NULL, NULL, MonProc, (LPARAM)&screens);
 	return screens;
 }
 

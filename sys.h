@@ -1,3 +1,32 @@
+/*
+ * Copyright (C) 2011 Andy Spencer <andy753421@gmail.com>
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/* Windowing system interface:
+ *
+ * The sys provides input to the window manager. It creates
+ * the main loop and responds to input events from the user,
+ * generally by converting them to a system independent form
+ * and then passing them to the wm.
+ *
+ * The sys also provides the API used by the wm to position
+ * and control windows. */
+
+
+/* Basic window type */
 typedef struct win_sys win_sys_t;
 typedef struct win_wm  win_wm_t;
 typedef struct {
@@ -7,20 +36,21 @@ typedef struct {
 	win_wm_t  *wm;
 } win_t;
 
+/* Generic key codes, also used for some other events
+ * Keys map to their Unicode value */
 typedef enum {
-	// 'char' = unicode,
-	key_alert       = '\a',    // Bell (alert)
-	key_backspace   = '\b',    // Backspace
-	key_formfeed    = '\f',    // Formfeed
-	key_newline     = '\n',    // New line
-	key_return      = '\r',    // Carriage return
-	key_tab         = '\t',    // Horizontal tab
-	key_vtab        = '\v',    // Vertical tab
-	key_singlequote = '\'',    // Single quotation mark
-	key_doublequote = '\"',    // Double quotation mark
-	key_backslash   = '\\',    // Backslash
-	key_question    = '\?',    // Literal question mark
-	key_none        = 0xF0000, // unused unicode space
+	key_alert       = '\a',
+	key_backspace   = '\b',
+	key_formfeed    = '\f',
+	key_newline     = '\n',
+	key_return      = '\r',
+	key_tab         = '\t',
+	key_vtab        = '\v',
+	key_singlequote = '\'',
+	key_doublequote = '\"',
+	key_backslash   = '\\',
+	key_question    = '\?',
+	key_none        = 0xF0000, // unused Unicode space
 	key_mouse0, key_mouse1, key_mouse2, key_mouse3,
 	key_mouse4, key_mouse5, key_mouse6, key_mouse7,
 	key_left, key_right, key_up,     key_down,
@@ -32,47 +62,62 @@ typedef enum {
 	key_enter, key_leave, key_focus, key_unfocus,
 } Key_t;
 
+/* Key modifiers, up is for button release */
 typedef struct {
 	unsigned char alt   : 1;
 	unsigned char ctrl  : 1;
 	unsigned char shift : 1;
 	unsigned char win   : 1;
 	unsigned char up    : 1;
-	unsigned char spare : 3;
 } mod_t;
-#define MOD(...) ((mod_t){__VA_ARGS__})
+#define MOD(...)     ((mod_t){__VA_ARGS__})
 #define mod2int(mod) (*((unsigned char*)&(mod)))
 
+/* Mouse movement */
 typedef struct {
 	int  x,  y;
 	int rx, ry;
 } ptr_t;
 #define PTR(...) ((ptr_t){__VA_ARGS__})
 
+/* Window states */
 typedef enum {
-	st_show,
-	st_full,
-	st_shade,
-	st_icon,
-	st_hide,
+	st_show,  // show as regular window
+	st_full,  // fullscreen/maximized
+	st_shade, // show titlebar only
+	st_icon,  // iconified/minimized
+	st_hide,  // completely hidden
 } state_t;
 
-void sys_watch(win_t *win, Key_t key, mod_t mod);
 
-void sys_unwatch(win_t *win, Key_t key, mod_t mod);
-
+/* Move the window to the specified location and set it's
+ * geometry. The position and size include borders and
+ * window decorations. */
 void sys_move(win_t *win, int x, int y, int w, int h);
 
+/* Rise the window above all other windows */
 void sys_raise(win_t *win);
 
+/* Give keyboard focus to the window and update window
+ * decorations. */
 void sys_focus(win_t *win);
 
-void sys_foreach(win_t *win);
-
+/* Set the windows drawing state */
 void sys_show(win_t *win, state_t st);
 
-list_t *sys_info(win_t *win);
+/* Start watching for a key events. The sys subsequently
+ * calls wm_handle_key whenever the event occurs. */
+void sys_watch(win_t *win, Key_t key, mod_t mod);
 
+/* Stop watching a key event */
+void sys_unwatch(win_t *win, Key_t key, mod_t mod);
+
+/* Return a list of windows representing the geometry of the
+ * physical displays attached to the computer. */
+list_t *sys_info(win_t *root);
+
+/* First call, calls wm_insert for each existing window */
 win_t *sys_init(void);
 
+/* Starts the main loop */
 void sys_run(win_t *root);
