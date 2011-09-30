@@ -1,0 +1,33 @@
+wmpus - a cross platform window manager
+=======================================
+wmpus is a lightweight window manager for X11 and MS Windows
+
+
+Instalation
+-----------
+Installing on X11:
+
+    make
+    cp wmpus /usr/local/bin
+
+Building for Win32:
+
+    make SYS=win32
+
+
+Hacking
+-------
+The source code is organized around several generic interfaces coresponding to
+the header files in this directory. The window manager (wm) and system (sys)
+interfaces can have multiple implementations which are chosen at link time by
+including the desired object file.
+
+For example, sys-x11.c and sys-win32.c are mutually exclusive impelmentations
+of the sys interface.
+
+
+More info
+---------
+See the wiki for more details
+
+    http://lug.rose-hulman.edu/code/projects/wmpus/wiki
