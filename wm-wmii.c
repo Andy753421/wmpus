@@ -500,7 +500,7 @@ static void wm_update_dpy(dpy_t *dpy)
 				if (lrow->next && ROW(lrow->next)->win == col->row->win) {
 					/* Hack to prevent flashing */
 					win_t *next = ROW(lrow->next)->win;
-					sys_move(next, x+MARGIN, y+MARGIN+STACK+MARGIN,
+					sys_move(next, x+MARGIN, y+MARGIN+STACK+MARGIN/2,
 						col->width, sy);
 				}
 				height = win == col->row->win ? sy : STACK;
