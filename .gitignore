@@ -1,6 +1,8 @@
 *~
 *.o
 *.swp
+.vimrc
+config.mk
 local
 wmpus
 wmpus.exe

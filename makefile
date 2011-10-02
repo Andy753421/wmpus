@@ -14,6 +14,8 @@ CFLAGS += -D_NO_OLDNAMES -DMARGIN=15
 PROG    = wmpus.exe
 endif
 
+include config.mk
+
 $(PROG): main.o util.o sys-$(SYS).o wm-$(WM).o
 	$(CC) $(CFLAGS) -o $@ $+ $(LIBS)
 

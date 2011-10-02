@@ -1,0 +1,4 @@
+wm-wmii.o: CFLAGS += -DDEBUG -DMODKEY=ctrl
+
+test: $(PROG)
+	DISPLAY=:2.0 ./wmpus
