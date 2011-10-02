@@ -847,7 +847,6 @@ void wm_insert(win_t *win)
 	win->wm = new0(win_wm_t);
 	sys_watch(win, key_enter,  MOD());
 	sys_watch(win, key_focus,  MOD());
-	sys_watch(win, key_mouse1, MOD());
 
 	/* Add to screen */
 	put_win(win, wm_tag, wm_dpy->layer);
