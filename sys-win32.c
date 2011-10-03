@@ -325,12 +325,15 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 void sys_raise(win_t *win)
 {
 	printf("sys_raise: %p\n", win);
-	SetForegroundWindow(win->sys->hwnd);
 
-	//HWND hwnd = win->sys->hwnd;
-	//HWND top  = GetAncestor(hwnd,GA_ROOT);
-	//SetWindowPos(top, HWND_TOPMOST, 0, 0, 0, 0,
-	//		SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+	/* See note in sys_focus */
+	DWORD oldId = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+	DWORD newId = GetCurrentThreadId();
+	AttachThreadInput(oldId, newId, TRUE);
+
+	SetWindowPos(win->sys->hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
+
+	AttachThreadInput(oldId, newId, FALSE);
 }
 
 void sys_focus(win_t *win)
@@ -344,9 +347,10 @@ void sys_focus(win_t *win)
 	DWORD newId = GetCurrentThreadId();
 	AttachThreadInput(oldId, newId, TRUE);
 
-	BringWindowToTop(win->sys->hwnd);
-	SetForegroundWindow(win->sys->hwnd);
-	SetFocus(win->sys->hwnd);
+	HWND next = GetWindow(win->sys->hwnd, GW_HWNDNEXT);
+	SetWindowPos(win->sys->hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
+	if (next)
+		SetWindowPos(win->sys->hwnd, next, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
 
 	AttachThreadInput(oldId, newId, FALSE);
 }

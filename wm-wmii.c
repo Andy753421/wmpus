@@ -657,10 +657,10 @@ static void wm_update_cols(dpy_t *dpy)
 			case tab:
 				sys_move(win, x+MARGIN, 0+MARGIN,
 					col->width, dpy->geom->h-2*MARGIN);
-				if (focus == win)
-					sys_raise(win);
 				break;
 			}
+			if (focus == win)
+				sys_raise(win);
 			ROW(lrow)->height = win->h;
 		}
 		x += col->width + MARGIN;
