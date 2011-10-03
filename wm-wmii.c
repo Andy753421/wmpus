@@ -283,8 +283,9 @@ static void print_txt(void)
 	} }
 	for (list_t *lflt = dpy->flts; lflt; lflt = lflt->next) {
 		flt_t *flt = lflt->data;
-		printf("    flt:   <%-9p [%p->%p] >%-9p focus=%d%d    - %d,%d %dx%d \n",
-				lflt->prev, lflt, lflt->data, lflt->next,
+		win_t *win = flt->win;
+		printf("    flt:   <%-9p [%p>>%p] >%-9p focus=%d%d    - %d,%d %dx%d \n",
+				lflt->prev, lflt, win, lflt->next,
 				dpy->flt == flt, wm_focus == flt->win,
 				flt->x, flt->y, flt->h, flt->w);
 	}  } }
@@ -514,8 +515,8 @@ static void raise_float(win_t *win)
 		flt_t *flt = cur->data;
 		wm_dpy->flts = list_remove(wm_dpy->flts, cur);
 		wm_dpy->flts = list_append(wm_dpy->flts, flt);
+		sys_raise(win);
 	}
-	sys_raise(win);
 }
 
 /* Toggle between floating and tiling layers */
@@ -611,6 +612,7 @@ static void wm_update_cols(dpy_t *dpy)
 		COL(lcol)->width *= (float)mx / tx;
 
 	/* Scale each column vertically */
+	win_t *focus = get_focus();
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next) {
 		col_t *col = lcol->data;
 		int nrows = list_length(col->rows);
@@ -648,7 +650,7 @@ static void wm_update_cols(dpy_t *dpy)
 			case tab:
 				sys_move(win, x+MARGIN, 0+MARGIN,
 					col->width, dpy->geom->h-2*MARGIN);
-				if (col->row->win == win)
+				if (focus == win)
 					sys_raise(win);
 				break;
 			}
