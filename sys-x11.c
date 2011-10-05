@@ -275,7 +275,7 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	//printf("event: %d\n", type);
 
 	/* Common data for all these events ... */
-	ptr_t ptr; mod_t mod;
+	ptr_t ptr = {}; mod_t mod = {};
 	if (type == KeyPress    || type == KeyRelease    ||
 	    type == ButtonPress || type == ButtonRelease ||
 	    type == MotionNotify) {

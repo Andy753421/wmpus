@@ -47,7 +47,7 @@ void list_insert_after(list_t *after, void *data);
 
 list_t *list_append(list_t *before, void *data);
 
-list_t *list_remove(list_t *head, list_t *item);
+list_t *list_remove(list_t *head, list_t *item, int freedata);
 
 int list_length(list_t *item);
 

@@ -299,21 +299,22 @@ static layer_t cut_win(win_t *win, tag_t *tag)
 	list_t *ldpy, *lcol, *lrow, *lflt;
 	layer_t layer = searchl(tag, win, &ldpy, &lcol, &lrow, &lflt);
 
-	dpy_t  *dpy   = DPY(ldpy);
 	if (layer == tiling) {
-		col_t  *col  = COL(lcol);
+		dpy_t *dpy = DPY(ldpy);
+		col_t *col = COL(lcol);
 		col->row  = lrow->prev ? lrow->prev->data :
 			    lrow->next ? lrow->next->data : NULL;
-		col->rows = list_remove(col->rows, lrow);
+		col->rows = list_remove(col->rows, lrow, 1);
 		if (col->rows == NULL && (lcol->next || lcol->prev)) {
 			dpy->col  = lcol->prev ? lcol->prev->data :
 				    lcol->next ? lcol->next->data : NULL;
-			dpy->cols = list_remove(dpy->cols, lcol);
+			dpy->cols = list_remove(dpy->cols, lcol, 1);
 		}
 	}
 
 	if (layer == floating) {
-		dpy->flts = list_remove(dpy->flts, lflt);
+		dpy_t *dpy = DPY(ldpy);
+		dpy->flts = list_remove(dpy->flts, lflt, 1);
 		dpy->flt  = dpy->flts ? list_last(dpy->flts)->data : NULL;
 		if (!dpy->flt && dpy->col && dpy->col->row)
 			dpy->layer = tiling;
@@ -513,7 +514,7 @@ static void raise_float(win_t *win)
 			break;
 	if (cur) {
 		flt_t *flt = cur->data;
-		wm_dpy->flts = list_remove(wm_dpy->flts, cur);
+		wm_dpy->flts = list_remove(wm_dpy->flts, cur, 0);
 		wm_dpy->flts = list_append(wm_dpy->flts, flt);
 		sys_raise(win);
 	}
@@ -587,9 +588,18 @@ static void tag_set(win_t *win, int name)
 static void tag_switch(int name)
 {
 	printf("tag_switch: %d\n", name);
-	if ((wm_col == NULL || wm_row == NULL) && wm_flt == NULL)
-		wm->tags = list_remove(wm->tags,
-				list_find(wm->tags, wm_tag));
+	tag_t *old = wm_tag;
+	if ((wm_col == NULL || wm_row == NULL) && wm_flt == NULL) {
+		list_t *ltag = list_find(wm->tags, old);
+		wm->tags = list_remove(wm->tags, ltag, 1);
+		while (old->dpys) {
+			dpy_t *dpy = old->dpys->data;
+			while (dpy->cols)
+				dpy->cols = list_remove(dpy->cols, dpy->cols, 1);
+			old->dpys = list_remove(old->dpys, old->dpys, 1);
+		}
+		free(old);
+	}
 	wm_tag = tag_find(name);
 }
 
@@ -865,10 +875,12 @@ void wm_remove(win_t *win)
 	print_txt();
 	for (list_t *tag = wm->tags; tag; tag = tag->next)
 		cut_win(win, tag->data);
+	free(win->wm);
 	set_focus(wm_focus);
 	wm_update();
 	print_txt();
 }
+
 void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);

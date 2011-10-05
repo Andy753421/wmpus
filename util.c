@@ -55,12 +55,14 @@ list_t *list_append(list_t *head, void *data)
 	return last ? head : node;
 }
 
-list_t *list_remove(list_t *head, list_t *node)
+list_t *list_remove(list_t *head, list_t *node, int freedata)
 {
 	list_t *next = node->next;
 	list_t *prev = node->prev;
 	if (next) next->prev = prev;
 	if (prev) prev->next = next;
+	if (freedata)
+		free(node->data);
 	free(node);
 	return head == node ? next : head;
 }
