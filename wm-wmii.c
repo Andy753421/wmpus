@@ -916,3 +916,25 @@ void wm_init(win_t *root)
 	for (int i = 0; i < countof(keys_s); i++)
 		sys_watch(root, keys_s[i], MOD(.MODKEY=1,.shift=1));
 }
+
+void wm_free(win_t *root)
+{
+	/* Re-show and free all windows */
+	while ( wm->tags) { tag_t *tag =  wm->tags->data;
+	while (tag->dpys) { dpy_t *dpy = tag->dpys->data;
+	while (dpy->cols) { col_t *col = dpy->cols->data;
+	while (col->rows) { row_t *row = col->rows->data;
+		sys_show(row->win, st_show);
+		free(row->win->wm);
+	col->rows = list_remove(col->rows, col->rows, 1); }
+	dpy->cols = list_remove(dpy->cols, dpy->cols, 1); }
+	while (dpy->flts) { flt_t *flt = dpy->flts->data;
+		sys_show(flt->win, st_show);
+		free(flt->win->wm);
+	dpy->flts = list_remove(dpy->flts, dpy->flts, 1); }
+	tag->dpys = list_remove(tag->dpys, tag->dpys, 1); }
+	 wm->tags = list_remove( wm->tags,  wm->tags, 1); }
+
+	/* Free remaining data */
+	free(wm);
+}

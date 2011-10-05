@@ -26,5 +26,7 @@ int main(int argc, char **argv)
 	win_t *root = sys_init();
 	wm_init(root);
 	sys_run(root);
+	wm_free(root);
+	sys_free(root);
 	return 0;
 }

@@ -122,3 +122,6 @@ void sys_run(win_t *root);
 
 /* Exit main loop */
 void sys_exit(void);
+
+/* Free all static data, for memory debugging */
+void sys_free(win_t *root);

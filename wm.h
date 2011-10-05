@@ -41,3 +41,6 @@ void wm_remove(win_t *win);
 
 /* First call, sets up key bindings, etc */
 void wm_init(win_t *root);
+
+/* First call, sets up key bindings, etc */
+void wm_free(win_t *root);

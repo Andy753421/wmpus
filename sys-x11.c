@@ -13,6 +13,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <search.h>
@@ -242,11 +243,16 @@ static win_t *win_find(Display *dpy, Window xid, int create)
 	return new;
 }
 
+static void win_free(win_t *win)
+{
+	free(win->sys);
+	free(win);
+}
+
 static void win_remove(win_t *win)
 {
 	tdelete(win, &cache, win_cmp);
-	free(win->sys);
-	free(win);
+	win_free(win);
 }
 
 static int win_viewable(win_t *win)
@@ -457,6 +463,7 @@ void sys_show(win_t *win, state_t state)
 	case st_show:
 		printf("sys_show: show\n");
 		XMapWindow(win->sys->dpy, win->sys->xid);
+		XSync(win->sys->dpy, False);
 		return;
 	case st_full:
 		printf("sys_show: full\n");
@@ -505,15 +512,11 @@ list_t *sys_info(win_t *win)
 {
 	/* Use global copy of screens so we can add struts */
 	if (screens == NULL) {
-		int n;
+		/* Add Xinerama screens */
+		int n = 0;
 		XineramaScreenInfo *info = NULL;
 		if (XineramaIsActive(win->sys->dpy))
 			info = XineramaQueryScreens(win->sys->dpy, &n);
-		if (!info) {
-			win_t *screen = new0(win_t);
-			*screen = *win;
-			return list_insert(NULL, screen);
-		}
 		for (int i = 0; i < n; i++) {
 			win_t *screen = new0(win_t);
 			screen->x = info[i].x_org;
@@ -522,6 +525,12 @@ list_t *sys_info(win_t *win)
 			screen->h = info[i].height;
 			screens = list_append(screens, screen);
 		}
+	}
+	if (screens == NULL) {
+		/* No xinerama support */
+		win_t *screen = new0(win_t);
+		*screen = *win;
+		screens = list_insert(NULL, screen);
 	}
 	return screens;
 }
@@ -561,12 +570,14 @@ void sys_run(win_t *root)
 	unsigned int nkids;
 	Window par, xid, *kids = NULL;
 	if (XQueryTree(root->sys->dpy, root->sys->xid,
-				&par, &xid, &kids, &nkids))
+				&par, &xid, &kids, &nkids)) {
 		for(int i = 0; i < nkids; i++) {
 			win_t *win = win_find(root->sys->dpy, kids[i], 1);
 			if (win && win_viewable(win) && !strut_add(root,win))
 				wm_insert(win);
 		}
+		XFree(kids);
+	}
 	wm_update(); // For struts
 
 	/* Main loop */
@@ -582,4 +593,12 @@ void sys_run(win_t *root)
 void sys_exit(void)
 {
 	running = 0;
+}
+
+void sys_free(win_t *root)
+{
+	XCloseDisplay(root->sys->dpy);
+	while (screens)
+		screens = list_remove(screens, screens, 1);
+	tdestroy(cache, (void(*)(void*))win_free);
 }
