@@ -40,9 +40,11 @@ typedef struct {
 } keymap_t;
 
 /* Global data */
-static int    shellhookid;
-static void  *cache;
-static win_t *root;
+static int     running;
+static int     shellhookid;
+static void   *cache;
+static win_t  *root;
+static list_t *screens;
 
 /* Conversion functions */
 static keymap_t key2vk[] = {
@@ -363,8 +365,8 @@ void sys_unwatch(win_t *win, Key_t key, mod_t mod)
 
 list_t *sys_info(win_t *win)
 {
-	list_t *screens = NULL;
-	EnumDisplayMonitors(NULL, NULL, MonProc, (LPARAM)&screens);
+	if (screens == NULL)
+		EnumDisplayMonitors(NULL, NULL, MonProc, (LPARAM)&screens);
 	return screens;
 }
 
@@ -419,8 +421,21 @@ win_t *sys_init(void)
 void sys_run(win_t *root)
 {
 	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0) > 0) {
+	running = 1;
+	while (running && GetMessage(&msg, NULL, 0, 0) > 0) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
+}
+
+void sys_exit(void)
+{
+	running = 0;
+}
+
+void sys_free(win_t *root)
+{
+	/* I don't really care about this
+	 * since I don't know how to use
+	 * valgrind on win32 anyway.. */
 }
