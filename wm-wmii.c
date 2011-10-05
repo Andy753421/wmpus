@@ -739,6 +739,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 #endif
 		if (key == key_f5) return wm_update(),    1;
 		if (key == key_f6) return print_txt(),    1;
+		if (key == 'q')    return sys_exit(),     1;
 	}
 
 	/* Floating layer */
@@ -902,7 +903,7 @@ void wm_init(win_t *root)
 	wm->tags    = list_insert(NULL, wm->tag);
 
 	Key_t keys_e[] = {key_enter, key_focus};
-	Key_t keys_s[] = {'h', 'j', 'k', 'l', ' ',
+	Key_t keys_s[] = {'h', 'j', 'k', 'l', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',

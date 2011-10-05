@@ -119,3 +119,6 @@ win_t *sys_init(void);
 
 /* Starts the main loop */
 void sys_run(win_t *root);
+
+/* Exit main loop */
+void sys_exit(void);

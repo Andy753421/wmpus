@@ -55,6 +55,7 @@ typedef enum {
 } color_t;
 
 /* Global data */
+static int   running;
 static void *cache;
 static Atom atoms[natoms];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
@@ -569,10 +570,16 @@ void sys_run(win_t *root)
 	wm_update(); // For struts
 
 	/* Main loop */
-	for(;;)
+	running = 1;
+	while (running)
 	{
 		XEvent ev;
 		XNextEvent(root->sys->dpy, &ev);
 		process_event(ev.type, &ev, root);
 	}
+}
+
+void sys_exit(void)
+{
+	running = 0;
 }
