@@ -588,15 +588,14 @@ static void tag_switch(int name)
 	printf("tag_switch: %d\n", name);
 	tag_t *old = wm_tag;
 	if ((wm_col == NULL || wm_row == NULL) && wm_flt == NULL) {
-		list_t *ltag = list_find(wm->tags, old);
-		wm->tags = list_remove(wm->tags, ltag, 1);
 		while (old->dpys) {
 			dpy_t *dpy = old->dpys->data;
 			while (dpy->cols)
 				dpy->cols = list_remove(dpy->cols, dpy->cols, 1);
 			old->dpys = list_remove(old->dpys, old->dpys, 1);
 		}
-		free(old);
+		list_t *ltag = list_find(wm->tags, old);
+		wm->tags = list_remove(wm->tags, ltag, 1);
 	}
 	wm_tag = tag_find(name);
 }
