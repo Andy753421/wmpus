@@ -256,8 +256,9 @@ void conf_init(int argc, char **argv)
 {
 	conf_argc = argc;
 	conf_argv = argv;
-	snprintf(conf_path, sizeof(conf_path),
-		"%s/%s", getenv("HOME"), ".wmpus");
+	snprintf(conf_path, sizeof(conf_path), "%s/%s",
+			getenv("HOME") ?: getenv("HOMEPATH") ?: ".",
+			".wmpus");
 	conf_reload();
 }
 

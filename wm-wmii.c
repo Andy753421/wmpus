@@ -718,7 +718,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		if (move_mode != none && mod.up)
 			return set_move(win,ptr,none),   1;
 		if (key == key_mouse1 && !mod.up && win->h == STACK)
-			return wm_update(),              0;
+			return set_focus(win), wm_update(), 0;
 		return 0;
 	}
 
@@ -789,7 +789,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	}
 
 	/* Focus change */
-	if (key == key_enter)
+	if (key == key_enter && win->h != STACK)
 		return set_focus(win), 1;
 
 	if (key_mouse0 <= key && key <= key_mouse7)

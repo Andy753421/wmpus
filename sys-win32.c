@@ -44,7 +44,6 @@ typedef struct {
 } keymap_t;
 
 /* Global data */
-static int     running;
 static int     shellhookid;
 static void   *cache;
 static win_t  *root;
@@ -435,13 +434,11 @@ win_t *sys_init(void)
 
 void sys_run(win_t *root)
 {
-	MSG msg;
-
+	MSG msg = {};
 	if (!NO_CAPTURE)
 		EnumWindows(LoopProc, 0);
-
-	running = 1;
-	while (running && GetMessage(&msg, NULL, 0, 0) > 0) {
+	while (GetMessage(&msg, NULL, 0, 0) > 0 &&
+	       msg.message != WM_QUIT) {
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
@@ -449,7 +446,7 @@ void sys_run(win_t *root)
 
 void sys_exit(void)
 {
-	running = 0;
+	PostQuitMessage(0);
 }
 
 void sys_free(win_t *root)
