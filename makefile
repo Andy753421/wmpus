@@ -10,13 +10,13 @@ endif
 
 ifeq ($(SYS),win32)
 CC      = i686-pc-mingw32-gcc
-CFLAGS += -D_NO_OLDNAMES -DMARGIN=15
+CFLAGS += -D_MODE_T_ -DMARGIN=15
 PROG    = wmpus.exe
 endif
 
 include config.mk
 
-$(PROG): main.o util.o sys-$(SYS).o wm-$(WM).o
+$(PROG): main.o conf.o util.o sys-$(SYS).o wm-$(WM).o
 	$(CC) $(CFLAGS) -o $@ $+ $(LIBS)
 
 %.o: %.c $(wildcard *.h) makefile

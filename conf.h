@@ -13,24 +13,14 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  */
 
-#include <stdlib.h>
-#include <stdio.h>
+int conf_get_int(const char *key);
 
-#include "util.h"
-#include "conf.h"
-#include "sys.h"
-#include "wm.h"
+const char *conf_get_str(const char *key);
 
-int main(int argc, char **argv)
-{
-	setbuf(stdout, NULL); // debug
-	conf_init(argc, argv);
-	win_t *root = sys_init();
-	wm_init(root);
+void conf_set_int(const char *key, int value);
 
-	sys_run(root);
+void conf_set_str(const char *key, const char *value);
 
-	wm_free(root);
-	sys_free(root);
-	return 0;
-}
+void conf_init(int argc, char **argv);
+
+void conf_free(void);
