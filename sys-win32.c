@@ -25,8 +25,12 @@
 #include <winuser.h>
 
 #include "util.h"
+#include "conf.h"
 #include "sys.h"
 #include "wm.h"
+
+/* Configuration */
+static int NO_CAPTURE = 0;
 
 /* Internal structures */
 struct win_sys {
@@ -294,6 +298,14 @@ BOOL CALLBACK MonProc(HMONITOR mon, HDC dc, LPRECT rect, LPARAM _screens)
 	return TRUE;
 }
 
+BOOL CALLBACK LoopProc(HWND hwnd, LPARAM user)
+{
+	win_t *win;
+	if ((win = win_find(hwnd,1)))
+		wm_insert(win);
+	return TRUE;
+}
+
 /********************
  * System functions *
  ********************/
@@ -375,6 +387,9 @@ win_t *sys_init(void)
 	HINSTANCE hInst = GetModuleHandle(NULL);
 	HWND      hwnd  = NULL;
 
+	/* Load configuration */
+	NO_CAPTURE = conf_get_int("main.no-capture", NO_CAPTURE);
+
 	/* Setup window class */
 	WNDCLASSEX wc    = {
 		.cbSize        = sizeof(WNDCLASSEX),
@@ -421,6 +436,10 @@ win_t *sys_init(void)
 void sys_run(win_t *root)
 {
 	MSG msg;
+
+	if (!NO_CAPTURE)
+		EnumWindows(LoopProc, 0);
+
 	running = 1;
 	while (running && GetMessage(&msg, NULL, 0, 0) > 0) {
 		TranslateMessage(&msg);

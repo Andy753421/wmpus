@@ -10,7 +10,7 @@ endif
 
 ifeq ($(SYS),win32)
 CC      = i686-pc-mingw32-gcc
-CFLAGS += -D_MODE_T_ -DMARGIN=15
+CFLAGS += -D_MODE_T_
 PROG    = wmpus.exe
 endif
 
