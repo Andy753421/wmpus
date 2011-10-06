@@ -21,6 +21,8 @@ void conf_set_int(const char *key, int value);
 
 void conf_set_str(const char *key, const char *value);
 
+void conf_reload(void);
+
 void conf_init(int argc, char **argv);
 
 void conf_free(void);

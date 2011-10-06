@@ -56,4 +56,6 @@ list_t *list_last(list_t *list);
 list_t *list_find(list_t *list, void *data);
 
 /* Misc */
+int str2num(char *str, int def);
+
 int error(char *fmt, ...);

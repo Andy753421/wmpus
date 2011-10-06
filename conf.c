@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <search.h>
+#include <getopt.h>
 
 #include "util.h"
 #include "conf.h"
@@ -34,7 +35,10 @@ typedef struct {
 } entry_t;
 
 /* Data */
-static void *conf;
+static void  *conf;
+static int    conf_argc;
+static char **conf_argv;
+static char   conf_path[256];
 
 /* Helpers */
 static int conf_cmp(const void *_a, const void *_b)
@@ -143,9 +147,70 @@ static void load_file(const char *path)
 	fclose(fd);
 }
 
+/* Load config from command line options */
+static struct option long_options[] = {
+	/* name hasarg flag val */
+	{"border",  2, NULL, 'b'},
+	{"margin",  2, NULL, 'm'},
+	{"capture", 0, NULL, 'c'},
+	{"int",     1, NULL, 'i'},
+	{"str",     1, NULL, 's'},
+	{"help",    0, NULL, 'h'},
+	{NULL,      0, NULL,  0 },
+};
+
+static void usage(int argc, char **argv)
+{
+	printf("Usage:\n");
+	printf("  %s [OPTION...]\n", argv[0]);
+	printf("\n");
+	printf("Options:\n");
+	printf("  -b, --border=n     Draw an n pixel window border\n");
+	printf("  -m, --margin=n     Leave an n pixel margin around windows\n");
+	printf("  -c, --capture      Automatically arrange all existing windows\n");
+	printf("  -i, --int=key=num  Set integer config option\n");
+	printf("  -s, --str=key=str  Set string config option\n");
+	printf("  -h, --help         Print usage information\n");
+}
+
 static void load_args(int argc, char **argv)
 {
-	/* ... */
+	char *key, *val;
+	while (1) {
+		int c = getopt_long(argc, argv, "b:m:ch", long_options, NULL);
+		if (c == -1)
+			break;
+		switch (c) {
+		case 'b':
+			conf_set_int("main.border", str2num(optarg, 2));
+			break;
+		case 'm':
+			conf_set_int("main.margin", str2num(optarg, 15));
+			break;
+		case 'c':
+			conf_set_int("main.capture", 1);
+			break;
+		case 'i':
+		case 's':
+			key = strdup(optarg);
+			val = strchr(key, '=');
+			if (val) {
+				*val++ = '\0';
+				if (c == 's')
+					conf_set_str(key, val);
+				else
+					conf_set_int(key, atol(val));
+			}
+			free(key);
+			break;
+		case 'h':
+			usage(argc, argv);
+			exit(0);
+		default:
+			usage(argc, argv);
+			exit(-1);
+		}
+	}
 }
 
 
@@ -172,13 +237,19 @@ void conf_set_str(const char *key, const char *value)
 	conf_set(key, 0, value);
 }
 
+void conf_reload(void)
+{
+	load_file(conf_path);
+	load_args(conf_argc, conf_argv);
+}
+
 void conf_init(int argc, char **argv)
 {
-	/* Load configuration */
-	char path[256];
-	snprintf(path, sizeof(path), "%s/%s", getenv("HOME"), ".wmpus");
-	load_file(path);
-	load_args(argc, argv);
+	conf_argc = argc;
+	conf_argv = argv;
+	snprintf(conf_path, sizeof(conf_path),
+		"%s/%s", getenv("HOME"), ".wmpus");
+	conf_reload();
 }
 
 void conf_free(void)

@@ -91,6 +91,13 @@ list_t *list_find(list_t *list, void *data)
 }
 
 /* Misc */
+int str2num(char *str, int def)
+{
+	char *end = NULL;
+	int num = strtol(str, &end, 10);
+	return end && *end == '\0' ? num : def;
+}
+
 int error(char *fmt, ...)
 {
 	va_list ap;
