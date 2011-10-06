@@ -13,9 +13,9 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  */
 
-int conf_get_int(const char *key);
+int conf_get_int(const char *key, int def);
 
-const char *conf_get_str(const char *key);
+const char *conf_get_str(const char *key, const char *def);
 
 void conf_set_int(const char *key, int value);
 

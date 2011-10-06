@@ -25,12 +25,13 @@
 #include <X11/extensions/Xinerama.h>
 
 #include "util.h"
+#include "conf.h"
 #include "sys.h"
 #include "wm.h"
 
-#ifndef BORDER
-#define BORDER 2
-#endif
+/* Configuration */
+static int BORDER     = 2;
+static int NO_CAPTURE = 0;
 
 /* Internal structures */
 struct win_sys {
@@ -540,6 +541,10 @@ win_t *sys_init(void)
 	Display *dpy;
 	Window   xid;
 
+	/* Load configuration */
+	BORDER     = conf_get_int("main.border",     BORDER);
+	NO_CAPTURE = conf_get_int("main.no-capture", NO_CAPTURE);
+
 	/* Open the display */
 	if (!(dpy = XOpenDisplay(NULL)))
 		error("Unable to get display");
@@ -567,18 +572,20 @@ win_t *sys_init(void)
 void sys_run(win_t *root)
 {
 	/* Add each initial window */
-	unsigned int nkids;
-	Window par, xid, *kids = NULL;
-	if (XQueryTree(root->sys->dpy, root->sys->xid,
-				&par, &xid, &kids, &nkids)) {
-		for(int i = 0; i < nkids; i++) {
-			win_t *win = win_find(root->sys->dpy, kids[i], 1);
-			if (win && win_viewable(win) && !strut_add(root,win))
-				wm_insert(win);
+	if (!NO_CAPTURE) {
+		unsigned int nkids;
+		Window par, xid, *kids = NULL;
+		if (XQueryTree(root->sys->dpy, root->sys->xid,
+					&par, &xid, &kids, &nkids)) {
+			for(int i = 0; i < nkids; i++) {
+				win_t *win = win_find(root->sys->dpy, kids[i], 1);
+				if (win && win_viewable(win) && !strut_add(root,win))
+					wm_insert(win);
+			}
+			XFree(kids);
 		}
-		XFree(kids);
+		wm_update(); // For struts
 	}
-	wm_update(); // For struts
 
 	/* Main loop */
 	running = 1;

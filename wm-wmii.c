@@ -17,18 +17,16 @@
 #include <stdlib.h>
 
 #include "util.h"
+#include "conf.h"
 #include "sys.h"
 #include "wm.h"
 
+/* Configuration */
 #ifndef MODKEY
 #define MODKEY alt
 #endif
-#ifndef MARGIN
-#define MARGIN 0
-#endif
-#ifndef STACK
-#define STACK  25
-#endif
+static int MARGIN = 0;
+static int STACK  = 25;
 
 /* Enums */
 typedef enum {
@@ -885,6 +883,10 @@ void wm_remove(win_t *win)
 void wm_init(win_t *root)
 {
 	printf("wm_init: %p\n", root);
+
+	/* Load configuration */
+	MARGIN = conf_get_int("main.margin", MARGIN);
+	STACK  = conf_get_int("main.stack",  STACK);
 
 	/* Hack, fix screen order */
 	list_t *screens = sys_info(root);
