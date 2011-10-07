@@ -563,7 +563,6 @@ win_t *sys_init(void)
 
 	/* Select window management events */
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
-	XSetInputFocus(dpy, None, RevertToNone, CurrentTime);
 	xerrorxlib = XSetErrorHandler(xerror);
 
 	return win_find(dpy, xid, 1);
