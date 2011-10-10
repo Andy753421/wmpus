@@ -305,6 +305,12 @@ BOOL CALLBACK LoopProc(HWND hwnd, LPARAM user)
 	return TRUE;
 }
 
+BOOL WINAPI CtrlProc(DWORD type)
+{
+	sys_exit();
+	return TRUE;
+}
+
 /********************
  * System functions *
  ********************/
@@ -429,6 +435,9 @@ win_t *sys_init(void)
 	//if (!RegisterHotKey(NULL, 123, MOD_CONTROL, VK_LBUTTON))
 	//	printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
 
+	/* Capture ctrl-c and console widnow close */
+	SetConsoleCtrlHandler(CtrlProc, TRUE);
+
 	return root = win_new(hwnd,0);
 }
 
@@ -446,7 +455,7 @@ void sys_run(win_t *root)
 
 void sys_exit(void)
 {
-	PostQuitMessage(0);
+	PostMessage(root->sys->hwnd, WM_QUIT, 0, 0);
 }
 
 void sys_free(win_t *root)

@@ -15,15 +15,23 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <signal.h>
 
 #include "util.h"
 #include "conf.h"
 #include "sys.h"
 #include "wm.h"
 
+void on_sigint(int signum)
+{
+	sys_exit();
+}
+
 int main(int argc, char **argv)
 {
 	setbuf(stdout, NULL); // debug
+	signal(SIGINT, on_sigint);
+
 	conf_init(argc, argv);
 	win_t *root = sys_init();
 	wm_init(root);
