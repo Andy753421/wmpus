@@ -38,17 +38,14 @@ void wm_update(void)
 int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 {
 	int new = key - '0';
-	if (!win)
-		return 0;
-	if (!mod.MODKEY)
-		return 0;
-	if (key < '0' || '9' < key)
-		return 0;
-	if (new == tag)
+	if (!win || !mod.MODKEY || mod.up || new == tag ||
+			key < '0' || key > '9')
 		return 0;
 
 	if (mod.shift) {
 		list_t *node = list_find(tags[tag], win);
+		if (node == NULL)
+			return 0;
 		tags[tag] = list_remove(tags[tag], node, 0);
 		tags[new] = list_insert(tags[new], win);
 		sys_show(win, st_hide);
@@ -76,6 +73,8 @@ void wm_remove(win_t *win)
 {
 	for (int i = 0; i < 10; i++) {
 		list_t *node = list_find(tags[i], win);
+		if (node == NULL)
+			continue;
 		tags[i] = list_remove(tags[i], node, 0);
 	}
 }
