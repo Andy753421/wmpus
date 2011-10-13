@@ -24,12 +24,22 @@
  * and control windows. */
 
 
+/* Window states */
+typedef enum {
+	st_show,  // show as regular window
+	st_full,  // fullscreen/maximized
+	st_shade, // show titlebar only
+	st_icon,  // iconified/minimized
+	st_hide,  // completely hidden
+} state_t;
+
 /* Basic window type */
 typedef struct win_sys win_sys_t;
 typedef struct win_wm  win_wm_t;
 typedef struct {
 	int x, y, z;
 	int w, h;
+	state_t    state;
 	win_sys_t *sys;
 	win_wm_t  *wm;
 } win_t;
@@ -77,15 +87,6 @@ typedef struct {
 	int rx, ry;
 } ptr_t;
 #define PTR(...) ((ptr_t){__VA_ARGS__})
-
-/* Window states */
-typedef enum {
-	st_show,  // show as regular window
-	st_full,  // fullscreen/maximized
-	st_shade, // show titlebar only
-	st_icon,  // iconified/minimized
-	st_hide,  // completely hidden
-} state_t;
 
 
 /* Move the window to the specified location and set it's

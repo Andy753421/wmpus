@@ -35,7 +35,6 @@ static int NO_CAPTURE = 0;
 /* Internal structures */
 struct win_sys {
 	HWND hwnd;
-	state_t state;
 };
 
 typedef struct {
@@ -250,7 +249,7 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 	case HSHELL_WINDOWDESTROYED:
 		printf("ShlProc: %p - window destroyed\n", hwnd);
 		if ((win = win_find(hwnd,0)) &&
-		    win->sys->state == st_show) {
+		    win->state == st_show) {
 			wm_remove(win);
 			win_remove(win);
 		}
@@ -367,7 +366,7 @@ void sys_show(win_t *win, state_t state)
 		[st_icon ] {"icon" , SW_MINIMIZE},
 		[st_hide ] {"hide" , SW_HIDE    },
 	};
-	win->sys->state = state;
+	win->state = state;
 	printf("sys_show: %s\n", map[state].str);
 	ShowWindow(win->sys->hwnd, map[state].cmd);
 }
