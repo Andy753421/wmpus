@@ -47,6 +47,7 @@ struct win_wm { };
 typedef struct {
 	win_t  *win;     // the window
 	int     height;  // win height in _this_ tag
+	state_t state;   // state of window
 } row_t;
 
 typedef struct {
@@ -59,6 +60,7 @@ typedef struct {
 typedef struct {
 	win_t *win;      // the window
 	int x, y, w, h;  // position of window (in this tag)
+	state_t state;   // state of window
 } flt_t;
 
 typedef struct {
@@ -633,6 +635,7 @@ static void wm_update_cols(dpy_t *dpy)
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 			win_t *win = ROW(lrow)->win;
 			win->h = ROW(lrow)->height;
+			state_t state = st_show;
 			int height = 0;
 			switch (col->mode) {
 			case split:
@@ -647,11 +650,13 @@ static void wm_update_cols(dpy_t *dpy)
 					win_t *next = ROW(lrow->next)->win;
 					sys_move(next, x+MARGIN, y+MARGIN+STACK+MARGIN/2,
 						col->width, sy);
+					sys_show(next, st_show);
 				}
-				height = win == col->row->win ? sy : STACK;
-				sys_move(win, x+MARGIN, y+MARGIN,
-					col->width, height);
-				y += height + (MARGIN/2);
+				int isfocus = win == col->row->win;
+				state  = isfocus ? st_show : st_shade;
+				sys_show(win, state);
+				sys_move(win, x+MARGIN, y+MARGIN, col->width, sy);
+				y += (isfocus ? sy : STACK) + (MARGIN/2);
 				break;
 			case max:
 			case tab:
@@ -659,6 +664,8 @@ static void wm_update_cols(dpy_t *dpy)
 					col->width, dpy->geom->h-2*MARGIN);
 				break;
 			}
+			ROW(lrow)->state = state;
+			sys_show(win, state);
 			if (focus == win)
 				sys_raise(win);
 			ROW(lrow)->height = win->h;
@@ -674,9 +681,9 @@ void wm_update(void)
 {
 	/* Show/hide tags */
 	tag_foreach_col(wm_tag, dpy, col, row, win)
-		sys_show(win, st_show);
+		sys_show(win, ROW(row)->state);
 	tag_foreach_flt(wm_tag, dpy, flt, win)
-		sys_show(win, st_show);
+		sys_show(win, FLT(flt)->state);
 	for (list_t *tag = wm ->tags; tag; tag = tag->next)
 		if (tag->data != wm_tag) {
 			tag_foreach_col(TAG(tag), dpy, col, row, win)
@@ -717,7 +724,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 			return set_move(win,ptr,resize), 1;
 		if (move_mode != none && mod.up)
 			return set_move(win,ptr,none),   1;
-		if (key == key_mouse1 && !mod.up && win->h == STACK)
+		if (key == key_mouse1 && !mod.up && win->state == st_shade)
 			return set_focus(win), wm_update(), 0;
 		return 0;
 	}
@@ -731,8 +738,9 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 #ifdef DEBUG
 		if (key == key_f1) return raise_float(win), 1;
 		if (key == key_f2) return set_focus(win), 1;
-		if (key == key_f3) return sys_show(win, st_show), 1;
-		if (key == key_f4) return sys_show(win, st_hide), 1;
+		if (key == key_f3) return sys_show(win, st_show),  1;
+		if (key == key_f4) return sys_show(win, st_hide),  1;
+		if (key == key_f7) return sys_show(win, st_shade), 1;
 #endif
 		if (key == key_f5) return wm_update(),    1;
 		if (key == key_f6) return print_txt(),    1;
@@ -789,7 +797,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	}
 
 	/* Focus change */
-	if (key == key_enter && win->h != STACK)
+	if (key == key_enter && win->state != st_shade)
 		return set_focus(win), 1;
 
 	if (key_mouse0 <= key && key <= key_mouse7)
@@ -908,7 +916,8 @@ void wm_init(win_t *root)
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-		key_f1, key_f2, key_f3, key_f4, key_f5, key_f6,
+		key_f1, key_f2, key_f3, key_f4,  key_f5,  key_f6,
+		key_f7, key_f8, key_f9, key_f10, key_f11, key_f12,
 		key_mouse1, key_mouse3};
 	for (int i = 0; i < countof(keys_e); i++)
 		sys_watch(root, keys_e[i],  MOD());

@@ -366,9 +366,13 @@ void sys_show(win_t *win, state_t state)
 		[st_icon ] {"icon" , SW_MINIMIZE},
 		[st_hide ] {"hide" , SW_HIDE    },
 	};
+	if (win->state != state && win->state == st_shade)
+		SetWindowRgn(win->sys->hwnd, NULL, TRUE);
 	win->state = state;
 	printf("sys_show: %s\n", map[state].str);
 	ShowWindow(win->sys->hwnd, map[state].cmd);
+	if (state == st_shade)
+		SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,25), TRUE);
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)
