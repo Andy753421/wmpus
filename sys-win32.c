@@ -342,16 +342,21 @@ void sys_focus(win_t *win)
 	/* Windows prevents a thread from using SetForegroundInput under
 	 * certain circumstances and instead flashes the windows toolbar icon.
 	 * Attaching the thread input queues avoids this behavior */
-	DWORD oldId = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+	HWND  fgWin = GetForegroundWindow();
+	if (fgWin == win->sys->hwnd)
+		return; // already focused
+	DWORD oldId = GetWindowThreadProcessId(fgWin, NULL);
 	DWORD newId = GetCurrentThreadId();
-	AttachThreadInput(oldId, newId, TRUE);
+	if (oldId != newId)
+		AttachThreadInput(oldId, newId, TRUE);
 
 	HWND next = GetWindow(win->sys->hwnd, GW_HWNDNEXT);
 	SetWindowPos(win->sys->hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
 	if (next)
 		SetWindowPos(win->sys->hwnd, next, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
 
-	AttachThreadInput(oldId, newId, FALSE);
+	if (oldId != newId)
+		AttachThreadInput(oldId, newId, FALSE);
 }
 
 void sys_show(win_t *win, state_t state)
