@@ -19,7 +19,7 @@
 #include <search.h>
 
 #define WIN32_LEAN_AND_MEAN
-#define _WIN32_WINNT 0x0500
+#define _WIN32_WINNT 0x0501
 #include <windows.h>
 #include <winbase.h>
 #include <winuser.h>
@@ -239,24 +239,30 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 	HWND hwnd = (HWND)wParam;
 	win_t *win = NULL;
 	switch (msg) {
-	case HSHELL_WINDOWCREATED:
 	case HSHELL_REDRAW:
+	case HSHELL_WINDOWCREATED:
 		printf("ShlProc: %p - %s\n", hwnd, msg == HSHELL_REDRAW ?
 				"redraw" : "window created");
 		if (!(win = win_find(hwnd,0)))
 			if ((win = win_find(hwnd,1)))
 				wm_insert(win);
 		return 1;
+	case HSHELL_WINDOWREPLACED:
 	case HSHELL_WINDOWDESTROYED:
-		printf("ShlProc: %p - window destroyed\n", hwnd);
+		printf("ShlProc: %p - %s\n", hwnd, msg == HSHELL_WINDOWREPLACED ?
+				"window replaced" : "window destroyed");
 		if ((win = win_find(hwnd,0)) &&
-		    win->state == st_show) {
+		    (win->state == st_show ||
+		     win->state == st_shade)) {
 			wm_remove(win);
 			win_remove(win);
 		}
 		return 1;
 	case HSHELL_WINDOWACTIVATED:
 		printf("ShlProc: %p - window activated\n", hwnd);
+		// Fake button-click
+		if ((win = win_find(hwnd,0)))
+			wm_handle_key(win, key_mouse1, MOD(), getptr());
 		return 0;
 	default:
 		printf("ShlProc: %p - unknown msg, %d\n", hwnd, msg);
