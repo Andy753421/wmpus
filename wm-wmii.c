@@ -556,6 +556,9 @@ static tag_t *tag_new(list_t *screens, int name)
 		tag->dpys = list_append(tag->dpys, dpy);
 	}
 	tag->dpy  = tag->dpys->data;
+	for (list_t *dpy = tag->dpys; dpy; dpy = dpy->next)
+		if (DPY(dpy)->geom->z > tag->dpy->geom->z)
+			tag->dpy = dpy->data;
 	return tag;
 }
 

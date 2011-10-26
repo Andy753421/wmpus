@@ -295,6 +295,7 @@ BOOL CALLBACK MonProc(HMONITOR mon, HDC dc, LPRECT rect, LPARAM _screens)
 	win_t *screen = new0(win_t);
 	screen->x = work->left;
 	screen->y = work->top;
+	screen->z = !!(info.dwFlags & MONITORINFOF_PRIMARY);
 	screen->w = work->right  - work->left;
 	screen->h = work->bottom - work->top;
 	*screens = list_append(*screens, screen);
