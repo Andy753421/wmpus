@@ -90,6 +90,41 @@ list_t *list_find(list_t *list, void *data)
 	return NULL;
 }
 
+list_t *list_sort(list_t *list, int rev, int (*func)(void *a, void*b))
+{
+	if (list == NULL || list->next == NULL)
+		return list;
+
+	/* Split list */
+	list_t *sides[2] = {NULL, NULL};
+	for (int i = 0; list; i=(i+1)%2) {
+		list_t *head = list;
+		list = list->next;
+		head->next = sides[i];
+		sides[i]   = head;
+	}
+
+	/* Sort sides */
+	sides[0] = list_sort(sides[0], !rev, func);
+	sides[1] = list_sort(sides[1], !rev, func);
+
+	/* Merge sides */
+	while (sides[0] || sides[1]) {
+		int i = sides[0] == NULL ? 1 :
+		        sides[1] == NULL ? 0 :
+			func(sides[0]->data,
+			     sides[1]->data) > 0 ? !!rev : !rev;
+		list_t *head = sides[i];
+		sides[i] = sides[i]->next;
+		head->next = list;
+		head->prev = NULL;
+		if (list)
+			list->prev = head;
+		list = head;
+	}
+	return list;
+}
+
 /* Misc */
 int str2num(char *str, int def)
 {

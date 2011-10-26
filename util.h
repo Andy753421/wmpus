@@ -55,6 +55,8 @@ list_t *list_last(list_t *list);
 
 list_t *list_find(list_t *list, void *data);
 
+list_t *list_sort(list_t *list, int rev, int (*func)(void*,void*));
+
 /* Misc */
 int str2num(char *str, int def);
 

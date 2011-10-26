@@ -126,6 +126,12 @@ static struct { int v, h; } move_dir;
 /********************
  * Helper functions *
  ********************/
+static int sort_win(void *a, void *b)
+{
+	return ((win_t*)a)->x > ((win_t*)b)->x ?  1 :
+	       ((win_t*)a)->x < ((win_t*)b)->x ? -1 : 0;
+}
+
 static win_t *get_focus(void)
 {
 	if (!wm_tag || !wm_dpy)
@@ -895,19 +901,9 @@ void wm_init(win_t *root)
 	MARGIN = conf_get_int("main.margin", MARGIN);
 	STACK  = conf_get_int("main.stack",  STACK);
 
-	/* Hack, fix screen order */
-	list_t *screens = sys_info(root);
-	list_t *left  = screens;
-	list_t *right = screens->next;
-	if (left && right && WIN(left)->x > WIN(right)->x) {
-	    	void *tmp   = left->data;
-	    	left->data  = right->data;
-	    	right->data = tmp;
-	}
-
 	wm          = new0(wm_t);
 	wm->root    = root;
-	wm->screens = screens;
+	wm->screens = list_sort(sys_info(root), 0, sort_win);
 	wm->tag     = tag_new(wm->screens, 1);
 	wm->tags    = list_insert(NULL, wm->tag);
 
