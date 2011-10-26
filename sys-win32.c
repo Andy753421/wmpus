@@ -31,6 +31,7 @@
 
 /* Configuration */
 static int NO_CAPTURE = 0;
+static int STACK      = 25;
 
 /* Internal structures */
 struct win_sys {
@@ -377,7 +378,7 @@ void sys_show(win_t *win, state_t state)
 	printf("sys_show: %s\n", map[state].str);
 	ShowWindow(win->sys->hwnd, map[state].cmd);
 	if (state == st_shade)
-		SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,25), TRUE);
+		SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,STACK), TRUE);
 }
 
 void sys_watch(win_t *win, Key_t key, mod_t mod)
@@ -406,6 +407,7 @@ win_t *sys_init(void)
 
 	/* Load configuration */
 	NO_CAPTURE = conf_get_int("main.no-capture", NO_CAPTURE);
+	STACK      = conf_get_int("main.stack",      STACK);
 
 	/* Setup window class */
 	WNDCLASSEX wc    = {
