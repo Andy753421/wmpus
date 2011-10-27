@@ -260,9 +260,9 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 		return 1;
 	case HSHELL_WINDOWACTIVATED:
 		printf("ShlProc: %p - window activated\n", hwnd);
-		// Fake button-click
-		if ((win = win_find(hwnd,0)))
-			wm_handle_key(win, key_mouse1, MOD(), getptr());
+		// Fake button-click (causes crazy switching)
+		//if ((win = win_find(hwnd,0)))
+		//	wm_handle_key(win, key_mouse1, MOD(), getptr());
 		return 0;
 	default:
 		printf("ShlProc: %p - unknown msg, %d\n", hwnd, msg);
