@@ -212,16 +212,6 @@ static void set_focus(win_t *win)
 		return;
 	}
 
-	/* - Only grab mouse button on unfocused window,
-	 *   this prevents stealing all mouse clicks from client windows,
-	 * - A better way may be to re-send mouse clicks to client windows
-	 *   using the return value from wm_handle_key */
-	for (int i = EV_MOUSE1; i < EV_MOUSE7; i++) {
-		if (wm_focus)
-			sys_watch(wm_focus, i, MOD());
-		sys_unwatch(win, i, MOD());
-	}
-
 	dpy_t *dpy; col_t *col; row_t *row; flt_t *flt;
 	switch (search(wm_tag, win, &dpy, &col, &row, &flt)) {
 	case TILING:
@@ -723,10 +713,10 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 	//	mod.shift ? 's' : '-',
 	//	mod.win   ? 'w' : '-');
 
-	/* Mouse movement */
-	if (ev == EV_MOUSE1)
-		raise_float(win);
+	/* Mouse events */
 	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7) {
+		if (ev == EV_MOUSE1 && !mod.MODKEY && !mod.up)
+			return raise_float(win),         0;
 		if (ev == EV_MOUSE1 && mod.MODKEY && !mod.up)
 			return set_move(win,ptr,MOVE),   1;
 		if (ev == EV_MOUSE3 && mod.MODKEY && !mod.up)
@@ -811,9 +801,6 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 	/* Focus change */
 	if (ev == EV_ENTER && win->state != ST_SHADE)
 		return set_focus(win), 1;
-
-	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7)
-		return set_focus(win), 0;
 
 	/* Reset focus after after focus change,
 	 * not sure what is causing the focus change in the first place
@@ -913,7 +900,7 @@ void wm_init(win_t *root)
 	wm->tag     = tag_new(wm->screens, 1);
 	wm->tags    = list_insert(NULL, wm->tag);
 
-	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
+	event_t ev_e[] = {EV_ENTER, EV_FOCUS, EV_MOUSE1};
 	event_t ev_s[] = {'h', 'j', 'k', 'l', 'c', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',

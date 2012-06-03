@@ -313,15 +313,8 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		if (wm_handle_event(win, xb2ev(xe->xbutton.button), mod, ptr))
 			XGrabPointer(dpy, xe->xbutton.root, True, PointerMotionMask|ButtonReleaseMask,
 					GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-		else {
-			printf("resending event\n");
-			XSendEvent(win->sys->dpy, xe->xbutton.window,    True,  NoEventMask, xe);
-			XSendEvent(win->sys->dpy, xe->xbutton.window,    False, NoEventMask, xe);
-			XSendEvent(win->sys->dpy, xe->xbutton.root,      True,  NoEventMask, xe);
-			XSendEvent(win->sys->dpy, xe->xbutton.root,      False, NoEventMask, xe);
-			XSendEvent(win->sys->dpy, xe->xbutton.subwindow, True,  NoEventMask, xe);
-			XSendEvent(win->sys->dpy, xe->xbutton.subwindow, False, NoEventMask, xe);
-		}
+		else
+			XAllowEvents(win->sys->dpy, ReplayPointer, CurrentTime);
 	}
 	else if (type == ButtonRelease) {
 		XUngrabPointer(dpy, CurrentTime);
@@ -332,7 +325,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		wm_handle_ptr(win, ptr);
 	}
 	else if (type == EnterNotify || type == LeaveNotify) {
-		printf("enter: %d\n", type);
+		printf("%s: %d\n", type==EnterNotify?"enter":"leave", type);
 		event_t ev = EnterNotify ? EV_ENTER : EV_LEAVE;
 		if ((win = win_find(dpy,xe->xcrossing.window,0)))
 			wm_handle_event(win, ev, MOD(), PTR());
@@ -503,7 +496,7 @@ void sys_watch(win_t *win, event_t ev, mod_t mod)
 	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7)
 		XGrabButton(win->sys->dpy, ev2xb(ev), mod2x(mod), win->sys->xid, False,
 				mod.up ? ButtonReleaseMask : ButtonPressMask,
-				GrabModeAsync, GrabModeAsync, None, None);
+				GrabModeSync, GrabModeAsync, None, None);
 	else if (ev == EV_ENTER)
 		XSelectInput(win->sys->dpy, win->sys->xid, EnterWindowMask|mask);
 	else if (ev == EV_LEAVE)
