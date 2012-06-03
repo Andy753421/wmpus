@@ -469,9 +469,11 @@ void sys_show(win_t *win, state_t state)
 		return;
 	case ST_FULL:
 		printf("sys_show: full\n");
+		XMapWindow(win->sys->dpy, win->sys->xid);
 		return;
 	case ST_SHADE:
 		printf("sys_show: shade\n");
+		XMapWindow(win->sys->dpy, win->sys->xid);
 		return;
 	case ST_ICON:
 		printf("sys_show: icon\n");
