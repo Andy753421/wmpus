@@ -8,11 +8,22 @@ Instalation
 Installing on X11:
 
     make
-    cp wmpus /usr/local/bin
+    make install
 
 Building for Win32:
 
+    make clean
     make SYS=win32
+
+
+Running wmpus
+-------------
+Start wmpus from from an X11 init file, for directly if you so choose:
+
+    X :0 &
+    DISPLAY=:0 wmpus
+
+External status bars such dzen or lxpanel should work well with wmpus
 
 
 Hacking
