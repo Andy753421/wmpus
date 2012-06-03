@@ -63,6 +63,7 @@ static Atom atoms[NATOMS];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
 static unsigned long colors[NCOLORS];
 static list_t *screens;
+static list_t *struts;
 
 /* Conversion functions */
 static event_map_t ev2sym[] = {
@@ -186,6 +187,7 @@ static int strut_add(win_t *root, win_t *win)
 	win->sys->strut.right  = ((int*)xdata)[1];
 	win->sys->strut.top    = ((int*)xdata)[2];
 	win->sys->strut.bottom = ((int*)xdata)[3];
+	struts = list_insert(struts, win);
 	for (list_t *cur = screens; cur; cur = cur->next)
 		strut_copy(cur->data, win, 1);
 	return strut_copy(root, win, 1);
@@ -193,6 +195,9 @@ static int strut_add(win_t *root, win_t *win)
 
 static int strut_del(win_t *root, win_t *win)
 {
+	list_t *lwin = list_find(struts, win);
+	if (lwin)
+		struts = list_remove(struts, lwin, 0);
 	for (list_t *cur = screens; cur; cur = cur->next)
 		strut_copy(cur->data, win, -1);
 	return strut_copy(root, win, -1);
@@ -430,6 +435,9 @@ void sys_raise(win_t *win)
 {
 	//printf("sys_raise: %p\n", win);
 	XRaiseWindow(win->sys->dpy, win->sys->xid);
+	for (list_t *cur = struts; cur; cur = cur->next)
+		XRaiseWindow(((win_t*)cur->data)->sys->dpy,
+		             ((win_t*)cur->data)->sys->xid);
 }
 
 void sys_focus(win_t *win)
