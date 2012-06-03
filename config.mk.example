@@ -1,4 +1,6 @@
-wm-wmii.o: CFLAGS += -DDEBUG -DMODKEY=ctrl
+# Set default install and compile flags
+#PREFIX = /usr
+#CFLAGS = -Os
 
-test: $(PROG)
-	DISPLAY=:2.0 ./wmpus
+# Build in debugging and use a different modifier key
+#wm-wmii.o: CFLAGS += -DDEBUG -DMODKEY=ctrl
