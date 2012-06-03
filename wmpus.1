@@ -1,14 +1,65 @@
-.TH WMPUS 1 "October 2011" wmpus
+.TH WMPUS 1 "June 2012" wmpus
 .SH NAME
 wmpus \- cross platform window manager
 .SH SYNOPSIS
-.B wmpus
+.B wmpus\fR [\fIOPTION\fR..]
 .SH DESCRIPTION
 wmpus is portable window manager. Currently it supports wmii like window
 management and includes x11 and win32 backends.
 .SH OPTIONS
 .TP
-There are no options
+.B -n\fR, \fB--no-capture\fR
+Do not arrange pre-existing windows
+.TP
+.B -b\fR, \fB--border\fR=\fIN\fR
+Draw an n pixel window border
+.TP
+.B -m\fR, \fB--margin\fR=\fIN\fR
+Leave an n pixel margin around windows
+.TP
+.B -i\fR, \fB--int\fR=\fIKEY=NUM\fR
+Set integer configuration option
+.TP
+.B -s\fR, \fB--str\fR=\fIKEY=STR\fR
+Set string configuration option
+.TP
+.B -h\fR, \fB--help\fR
+Print usage information
+.SH CONFIGURATION
+Wmpus supports a simple ini-like configuration file stored in the users home
+directory. Currently supported configuration options include:
+.SS Main section
+.TP
+.B no-capture\fR=\fI[01]\fR
+Do not arrange pre-existing windows. Same as \fB-n\fR
+.TP
+.B border\fR=\fIN\fR
+Border width in pixels to draw around windows. X11 only, default 2. Same as
+\fB-b\fR
+.TP
+.B margin\fR=\fIN\fR
+Margin in pixels between windows for wm-wmii. X11 default 0, Win32 default 15.
+Same as \fB-m\fR
+.TP
+.B stack\fR=\fIN\fR
+Height in pixels for non-focused windows when the column is set to stack mode
+.SH COMPILE-TIME OPTIONS
+The windowing system backend and window management modes can be changed at
+compile-time by linking in the correct object file. Supported windowing systems
+include X11 (sys-x11.c) and Windows (sys-win32.c). Supported window management
+modes include WMII like window management (wm-wmii.c) and a simple tags based
+virtual-desktop manager (wm-tags.c).
+.P
+In addition several pre-processor settings are available which can be set in
+config.mk or on the command line:
+.TP
+.B MODKEY\fR=\fIkey\fR
+Modifier used for window management commands, can be either \fIalt\fR,
+\fIctrl\fR, \fIshift\fR, or \fIwin\fR. Default alt
+.TP
+.B DEBUG\fR
+Enable various debugging functions
+.P
 .SH WMII WINDOW MANAGEMENT
 The wmii window management mode mimics the behavior of the \fBwmii\fR(1) window
 manager. By default, the \fBalt\-\fR prefix is used for most window management
@@ -54,20 +105,47 @@ Switch the current to \fIstack\fR mode
 .TP
 .B Alt\-m
 Switch the current to \fImaximized\fR mode
-.SS Tag commands
+.SS Tagging windows
 .TP
 .B Alt\-[0..n]
 Switch to tag n
 .TP
 .B Alt\-Shift\-[0..n]
 Move the currently focused window to tag n
+.SS Floating windows
+.TP
+.B Alt-Space
+Toggle focus between the tiling and floating layers
+.TP
+.B Alt-Shift-Space
+Move the currently focused window between the tiling and floating layers
+.SS Other commands
+.TP
+.B Alt-Shift-c
+Close the currently focused window
+.TP
+.B Alt-Shift-q
+Restore all hidden windows and quit wmpus
+.TP
+.B Alt-F5
+Refresh the window layout (useful for debugging)
+.TP
+.B Alt-F6
+Dump a ASCII representation the window layout to standard output (useful for
+debugging)
 .SS Mouse commands
 .TP
 .B Pointer
-Moving the mouse over a window focuses that window.
+Moving the mouse over a window focuses that window
+.TP
+.B Button1
+Click in a floating window brings it to the top
+.TP
+.B Alt-Button1
+Click and drag moves a floating window under the cursor
 .TP
 .B Alt-Button3
-Click and drag resizes the window under the cursor.
+Click and drag resizes the window under the cursor
 .SH X11 BACKEND
 The X11 backend draws a small 2px border around each window. The border for the
 currently focused window is set to a lighter color than the rest.
@@ -75,25 +153,10 @@ currently focused window is set to a lighter color than the rest.
 The Win32 backend uses the existing window borders and title bars. It also
 leaves a narrow space between the windows so that they look more natural in a
 Windows environment.
-.SH CUSTOMIZATION
-The backend and window management modes can be changed by linking in the
-correct object file.
-.P
-Some settings can be changed at compiling time using the C Preprocessor's -D
-directive.
+.SH FILES
 .TP
-\fBBORDER\fR=\fIN\fR
-Set the border width for wm-x11 to N pixels. Default 2
-.TP
-\fBMODKEY\fR=\fIkey\fR
-Modifier used for window management commands, can be either \fIalt\fR,
-\fIctrl\fR, \fIshift\fR, or \fIwin\fR. Default alt
-.TP
-\fBMARGIN\fR=\fIN\fR
-Margin in pixels between windows for wm-wmii. X11 default 0, Win32 default 15
-.TP
-\fBSTACK\fR=\fIN\fR
-Height in pixels for non-focused windows when the column is set to stack mode.
+~/.wmpus
+The wmpus configuration file
 .SH SEE ALSO
 .BR wmii (1),
 .BR dwm (1),
