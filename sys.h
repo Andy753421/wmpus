@@ -26,11 +26,11 @@
 
 /* Window states */
 typedef enum {
-	st_show,  // show as regular window
-	st_full,  // fullscreen/maximized
-	st_shade, // show titlebar only
-	st_icon,  // iconified/minimized
-	st_hide,  // completely hidden
+	ST_SHOW,  // show as regular window
+	ST_FULL,  // fullscreen/maximized
+	ST_SHADE, // show titlebar only
+	ST_ICON,  // iconified/minimized
+	ST_HIDE,  // completely hidden
 } state_t;
 
 /* Basic window type */
@@ -46,29 +46,30 @@ typedef struct {
 
 /* Generic key codes, also used for some other events
  * Keys map to their Unicode value */
-typedef enum {
-	key_alert       = '\a',
-	key_backspace   = '\b',
-	key_formfeed    = '\f',
-	key_newline     = '\n',
-	key_return      = '\r',
-	key_tab         = '\t',
-	key_vtab        = '\v',
-	key_singlequote = '\'',
-	key_doublequote = '\"',
-	key_backslash   = '\\',
-	key_question    = '\?',
-	key_none        = 0xF0000, // unused Unicode space
-	key_mouse0, key_mouse1, key_mouse2, key_mouse3,
-	key_mouse4, key_mouse5, key_mouse6, key_mouse7,
-	key_left, key_right, key_up,     key_down,
-	key_home, key_end,   key_pageup, key_pagedown,
-	key_f1, key_f2,  key_f3,  key_f4,
-	key_f5, key_f6,  key_f7,  key_f8,
-	key_f9, key_f10, key_f11, key_f12,
-	key_alt, key_ctrl, key_shift, key_win,
-	key_enter, key_leave, key_focus, key_unfocus,
-} Key_t;
+typedef int event_t;
+enum {
+	EV_ALERT       = '\a',
+	EV_BACKSPACE   = '\b',
+	EV_FORMFEED    = '\f',
+	EV_NEWLINE     = '\n',
+	EV_RETURN      = '\r',
+	EV_TAB         = '\t',
+	EV_VTAB        = '\v',
+	EV_SINGLEQUOTE = '\'',
+	EV_DOUBLEQUOTE = '\"',
+	EV_BACKSLASH   = '\\',
+	EV_QUESTION    = '\?',
+	EV_NONE        = 0xF0000, // unused Unicode space
+	EV_MOUSE0, EV_MOUSE1, EV_MOUSE2, EV_MOUSE3,
+	EV_MOUSE4, EV_MOUSE5, EV_MOUSE6, EV_MOUSE7,
+	EV_LEFT, EV_RIGHT, EV_UP,     EV_DOWN,
+	EV_HOME, EV_END,   EV_PAGEUP, EV_PAGEDOWN,
+	EV_F1, EV_F2,  EV_F3,  EV_F4,
+	EV_F5, EV_F6,  EV_F7,  EV_F8,
+	EV_F9, EV_F10, EV_F11, EV_F12,
+	EV_ALT, EV_CTRL, EV_SHIFT, EV_WIN,
+	EV_ENTER, EV_LEAVE, EV_FOCUS, EV_UNFOCUS,
+};
 
 /* Key modifiers, up is for button release */
 typedef struct {
@@ -104,12 +105,12 @@ void sys_focus(win_t *win);
 /* Set the windows drawing state */
 void sys_show(win_t *win, state_t st);
 
-/* Start watching for a key events. The sys subsequently
- * calls wm_handle_key whenever the event occurs. */
-void sys_watch(win_t *win, Key_t key, mod_t mod);
+/* Start watching for an event. The sys subsequently
+ * calls wm_handle_event whenever the event occurs. */
+void sys_watch(win_t *win, event_t ev, mod_t mod);
 
-/* Stop watching a key event */
-void sys_unwatch(win_t *win, Key_t key, mod_t mod);
+/* Stop watching an event */
+void sys_unwatch(win_t *win, event_t event, mod_t mod);
 
 /* Return a list of windows representing the geometry of the
  * physical displays attached to the computer. */

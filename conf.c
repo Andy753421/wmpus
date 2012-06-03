@@ -23,7 +23,7 @@
 #include "conf.h"
 
 /* Types */
-typedef enum { number, string } type_t;
+typedef enum { NUMBER, STRING } type_t;
 
 typedef struct {
 	type_t  type;
@@ -63,7 +63,7 @@ static void conf_set(const char *key, int num, const char *str)
 	if ((entry = conf_get(key))) {
 		tdelete(entry, &conf, conf_cmp);
 		free(entry->key);
-		if (entry->type == string)
+		if (entry->type == STRING)
 			free(entry->str);
 		free(entry);
 	}
@@ -72,11 +72,11 @@ static void conf_set(const char *key, int num, const char *str)
 	entry = new0(entry_t);
 	entry->key = strdup(key);
 	if (str) {
-		entry->type = string;
+		entry->type = STRING;
 		entry->str  = strdup(str);
 		printf("set_str: %s = %s\n", key, str);
 	} else {
-		entry->type = number;
+		entry->type = NUMBER;
 		entry->num  = num;
 		printf("set_num: %s = %d\n", key, num);
 	}
@@ -225,7 +225,7 @@ static void load_args(int argc, char **argv)
 int conf_get_int(const char *key, int def)
 {
 	entry_t *entry = conf_get(key);
-	return entry && entry->type == number
+	return entry && entry->type == NUMBER
 		? entry->num : def;
 }
 
@@ -237,7 +237,7 @@ void conf_set_int(const char *key, int value)
 const char *conf_get_str(const char *key, const char *def)
 {
 	entry_t *entry = conf_get(key);
-	return entry && entry->type == string
+	return entry && entry->type == STRING
 		? entry->str : def;
 }
 

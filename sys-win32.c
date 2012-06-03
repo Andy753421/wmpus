@@ -30,8 +30,8 @@
 #include "wm.h"
 
 /* Configuration */
-static int NO_CAPTURE = 0;
-static int STACK      = 25;
+static int no_capture = 0;
+static int stack      = 25;
 
 /* Internal structures */
 struct win_sys {
@@ -39,9 +39,9 @@ struct win_sys {
 };
 
 typedef struct {
-	Key_t key;
-	int   vk;
-} keymap_t;
+	event_t ev;
+	int     vk;
+} event_map_t;
 
 /* Global data */
 static int     shellhookid;
@@ -50,54 +50,54 @@ static win_t  *root;
 static list_t *screens;
 
 /* Conversion functions */
-static keymap_t key2vk[] = {
-	{key_mouse1  , VK_LBUTTON },
-	{key_mouse2  , VK_MBUTTON },
-	{key_mouse3  , VK_RBUTTON },
-	{key_left    , VK_LEFT    },
-	{key_right   , VK_RIGHT   },
-	{key_up      , VK_UP      },
-	{key_down    , VK_DOWN    },
-	{key_home    , VK_HOME    },
-	{key_end     , VK_END     },
-	{key_pageup  , VK_PRIOR   },
-	{key_pagedown, VK_NEXT    },
-	{key_f1      , VK_F1      },
-	{key_f2      , VK_F2      },
-	{key_f3      , VK_F3      },
-	{key_f4      , VK_F4      },
-	{key_f5      , VK_F5      },
-	{key_f6      , VK_F6      },
-	{key_f7      , VK_F7      },
-	{key_f8      , VK_F8      },
-	{key_f9      , VK_F9      },
-	{key_f10     , VK_F10     },
-	{key_f11     , VK_F11     },
-	{key_f12     , VK_F12     },
-	{key_shift   , VK_SHIFT   },
-	{key_shift   , VK_LSHIFT  },
-	{key_shift   , VK_RSHIFT  },
-	{key_ctrl    , VK_CONTROL },
-	{key_ctrl    , VK_LCONTROL},
-	{key_ctrl    , VK_RCONTROL},
-	{key_alt     , VK_MENU    },
-	{key_alt     , VK_LMENU   },
-	{key_alt     , VK_RMENU   },
-	{key_win     , VK_LWIN    },
-	{key_win     , VK_RWIN    },
+static event_map_t ev2vk[] = {
+	{EV_MOUSE1  , VK_LBUTTON },
+	{EV_MOUSE2  , VK_MBUTTON },
+	{EV_MOUSE3  , VK_RBUTTON },
+	{EV_LEFT    , VK_LEFT    },
+	{EV_RIGHT   , VK_RIGHT   },
+	{EV_UP      , VK_UP      },
+	{EV_DOWN    , VK_DOWN    },
+	{EV_HOME    , VK_HOME    },
+	{EV_END     , VK_END     },
+	{EV_PAGEUP  , VK_PRIOR   },
+	{EV_PAGEDOWN, VK_NEXT    },
+	{EV_F1      , VK_F1      },
+	{EV_F2      , VK_F2      },
+	{EV_F3      , VK_F3      },
+	{EV_F4      , VK_F4      },
+	{EV_F5      , VK_F5      },
+	{EV_F6      , VK_F6      },
+	{EV_F7      , VK_F7      },
+	{EV_F8      , VK_F8      },
+	{EV_F9      , VK_F9      },
+	{EV_F10     , VK_F10     },
+	{EV_F11     , VK_F11     },
+	{EV_F12     , VK_F12     },
+	{EV_SHIFT   , VK_SHIFT   },
+	{EV_SHIFT   , VK_LSHIFT  },
+	{EV_SHIFT   , VK_RSHIFT  },
+	{EV_CTRL    , VK_CONTROL },
+	{EV_CTRL    , VK_LCONTROL},
+	{EV_CTRL    , VK_RCONTROL},
+	{EV_ALT     , VK_MENU    },
+	{EV_ALT     , VK_LMENU   },
+	{EV_ALT     , VK_RMENU   },
+	{EV_WIN     , VK_LWIN    },
+	{EV_WIN     , VK_RWIN    },
 };
 
 /* - Keycodes */
-static Key_t w2key(UINT vk)
+static event_t w2ev(UINT vk)
 {
-	keymap_t *km = map_getr(key2vk,vk);
-	return km ? km->key : tolower(vk);
+	event_map_t *em = map_getr(ev2vk,vk);
+	return em ? em->ev : tolower(vk);
 }
 
-static UINT key2w(Key_t key)
+static UINT ev2w(event_t ev)
 {
-	keymap_t *km = map_get(key2vk,key);
-	return km ? km->vk : toupper(key);
+	event_map_t *em = map_get(ev2vk,ev);
+	return em ? em->vk : toupper(ev);
 }
 
 static mod_t getmod(void)
@@ -192,44 +192,44 @@ static win_t *win_focused(void)
 LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 {
 	KBDLLHOOKSTRUCT *st = (KBDLLHOOKSTRUCT *)lParam;
-	Key_t key = w2key(st->vkCode);
+	event_t ev = w2ev(st->vkCode);
 	mod_t mod = getmod();
 	mod.up = !!(st->flags & 0x80);
 	printf("KbdProc: %d,%x,%lx - %lx,%lx,%lx - %x,%x\n",
 			msg, wParam, lParam,
 			st->vkCode, st->scanCode, st->flags,
-			key, mod2int(mod));
-	return wm_handle_key(win_focused() ?: root, key, mod, getptr())
+			ev, mod2int(mod));
+	return wm_handle_event(win_focused() ?: root, ev, mod, getptr())
 		|| CallNextHookEx(0, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK MllProc(int msg, WPARAM wParam, LPARAM lParam)
 {
-	Key_t  key = key_none;
+	event_t ev = EV_NONE;
 	mod_t  mod = getmod();
 	win_t *win = win_cursor();
 
 	/* Update modifiers */
 	switch (wParam) {
-	case WM_LBUTTONDOWN: mod.up = 0; key = key_mouse1; break;
-	case WM_LBUTTONUP:   mod.up = 1; key = key_mouse1; break;
-	case WM_RBUTTONDOWN: mod.up = 0; key = key_mouse3; break;
-	case WM_RBUTTONUP:   mod.up = 1; key = key_mouse3; break;
+	case WM_LBUTTONDOWN: mod.up = 0; ev = EV_MOUSE1; break;
+	case WM_LBUTTONUP:   mod.up = 1; ev = EV_MOUSE1; break;
+	case WM_RBUTTONDOWN: mod.up = 0; ev = EV_MOUSE3; break;
+	case WM_RBUTTONUP:   mod.up = 1; ev = EV_MOUSE3; break;
 	}
 
 	/* Check for focus-in/focus-out */
 	static win_t *old = NULL;
 	if (win && win != old) {
-		wm_handle_key(old, key_leave, mod, getptr());
-		wm_handle_key(win, key_enter, mod, getptr());
+		wm_handle_event(old, EV_LEAVE, mod, getptr());
+		wm_handle_event(win, EV_ENTER, mod, getptr());
 	}
 	old = win;
 
 	/* Send mouse movement event */
 	if (wParam == WM_MOUSEMOVE)
 		return wm_handle_ptr(win_cursor(), getptr());
-	else if (key != key_none)
-		return wm_handle_key(win_cursor(), key, mod, getptr());
+	else if (ev != EV_NONE)
+		return wm_handle_event(win_cursor(), ev, mod, getptr());
 	else
 		return CallNextHookEx(0, msg, wParam, lParam);
 }
@@ -252,8 +252,8 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 		printf("ShlProc: %p - %s\n", hwnd, msg == HSHELL_WINDOWREPLACED ?
 				"window replaced" : "window destroyed");
 		if ((win = win_find(hwnd,0)) &&
-		    (win->state == st_show ||
-		     win->state == st_shade)) {
+		    (win->state == ST_SHOW ||
+		     win->state == ST_SHADE)) {
 			wm_remove(win);
 			win_remove(win);
 		}
@@ -262,7 +262,7 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 		printf("ShlProc: %p - window activated\n", hwnd);
 		// Fake button-click (causes crazy switching)
 		//if ((win = win_find(hwnd,0)))
-		//	wm_handle_key(win, key_mouse1, MOD(), getptr());
+		//	wm_handle_event(win, EV_MOUSE1, MOD(), getptr());
 		return 0;
 	default:
 		printf("ShlProc: %p - unknown msg, %d\n", hwnd, msg);
@@ -373,30 +373,30 @@ void sys_show(win_t *win, state_t state)
 		char *str;
 		int   cmd;
 	} map[] = {
-		[st_show ] {"show" , SW_SHOW    },
-		[st_full ] {"full" , SW_MAXIMIZE},
-		[st_shade] {"shade", SW_SHOW    },
-		[st_icon ] {"icon" , SW_MINIMIZE},
-		[st_hide ] {"hide" , SW_HIDE    },
+		[ST_SHOW ] {"show" , SW_SHOW    },
+		[ST_FULL ] {"full" , SW_MAXIMIZE},
+		[ST_SHADE] {"shade", SW_SHOW    },
+		[ST_ICON ] {"icon" , SW_MINIMIZE},
+		[ST_HIDE ] {"hide" , SW_HIDE    },
 	};
-	if (win->state != state && win->state == st_shade)
+	if (win->state != state && win->state == ST_SHADE)
 		SetWindowRgn(win->sys->hwnd, NULL, TRUE);
 	win->state = state;
 	printf("sys_show: %s\n", map[state].str);
 	ShowWindow(win->sys->hwnd, map[state].cmd);
-	if (state == st_shade)
-		SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,STACK), TRUE);
+	if (state == ST_SHADE)
+		SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,stack), TRUE);
 }
 
-void sys_watch(win_t *win, Key_t key, mod_t mod)
+void sys_watch(win_t *win, event_t ev, mod_t mod)
 {
-	(void)key2w; // TODO
+	(void)ev2w; // TODO
 	//printf("sys_watch: %p\n", win);
 }
 
-void sys_unwatch(win_t *win, Key_t key, mod_t mod)
+void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 {
-	(void)key2w; // TODO
+	(void)ev2w; // TODO
 	//printf("sys_unwatch: %p\n", win);
 }
 
@@ -413,8 +413,8 @@ win_t *sys_init(void)
 	HWND      hwnd  = NULL;
 
 	/* Load configuration */
-	NO_CAPTURE = conf_get_int("main.no-capture", NO_CAPTURE);
-	STACK      = conf_get_int("main.stack",      STACK);
+	no_capture = conf_get_int("main.no-capture", no_capture);
+	stack      = conf_get_int("main.stack",      stack);
 
 	/* Setup window class */
 	WNDCLASSEX wc    = {
@@ -465,7 +465,7 @@ win_t *sys_init(void)
 void sys_run(win_t *root)
 {
 	MSG msg = {};
-	if (!NO_CAPTURE)
+	if (!no_capture)
 		EnumWindows(LoopProc, 0);
 	while (GetMessage(&msg, NULL, 0, 0) > 0 &&
 	       msg.message != WM_QUIT) {

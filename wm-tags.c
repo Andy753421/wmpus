@@ -35,11 +35,11 @@ void wm_update(void)
 {
 }
 
-int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
+int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 {
-	int new = key - '0';
+	int new = ev - '0';
 	if (!win || !mod.MODKEY || mod.up || new == tag ||
-			key < '0' || key > '9')
+			ev < '0' || ev > '9')
 		return 0;
 
 	if (mod.shift) {
@@ -48,12 +48,12 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 			return 0;
 		tags[tag] = list_remove(tags[tag], node, 0);
 		tags[new] = list_insert(tags[new], win);
-		sys_show(win, st_hide);
+		sys_show(win, ST_HIDE);
 	} else {
 		for (list_t *cur = tags[new]; cur; cur = cur->next)
-			sys_show(cur->data, st_show);
+			sys_show(cur->data, ST_SHOW);
 		for (list_t *cur = tags[tag]; cur; cur = cur->next)
-			sys_show(cur->data, st_hide);
+			sys_show(cur->data, ST_HIDE);
 		tag = new;
 	}
 	return 1;
@@ -81,7 +81,7 @@ void wm_remove(win_t *win)
 
 void wm_init(win_t *root)
 {
-	Key_t keys[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+	event_t keys[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	for (int i = 0; i < countof(keys); i++) {
 		sys_watch(root, keys[i], MOD(.MODKEY=1));
 		sys_watch(root, keys[i], MOD(.MODKEY=1,.shift=1));
@@ -92,7 +92,7 @@ void wm_free(win_t *root)
 {
 	for (int i = 0; i < 10; i++) {
 		while (tags[i]) {
-			sys_show(tags[i]->data, st_show);
+			sys_show(tags[i]->data, ST_SHOW);
 			tags[i] = list_remove(tags[i], tags[i], 0);
 		}
 	}

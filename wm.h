@@ -25,10 +25,8 @@
 /* Refresh the window layout */
 void wm_update(void);
 
-/* Called for each watched key press.
- * This is currently used for some other events such
- * as focus-in and focus-out as well. */
-int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr);
+/* Called for each watched event */
+int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr);
 
 /* Called for each mouse movement */
 int wm_handle_ptr(win_t *win, ptr_t ptr);

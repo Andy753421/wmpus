@@ -30,8 +30,8 @@
 #include "wm.h"
 
 /* Configuration */
-static int BORDER     = 2;
-static int NO_CAPTURE = 0;
+static int border     = 2;
+static int no_capture = 0;
 
 /* Internal structures */
 struct win_sys {
@@ -44,48 +44,48 @@ struct win_sys {
 };
 
 typedef struct {
-	Key_t key;
-	int   sym;
-} keymap_t;
+	event_t ev;
+	int     sym;
+} event_map_t;
 
 typedef enum {
-	wm_proto, wm_focus, net_strut, natoms
+	WM_PROTO, WM_FOCUS, NET_STRUT, NATOMS
 } atom_t;
 
 typedef enum {
-	clr_focus, clr_unfocus, clr_urgent, ncolors
+	CLR_FOCUS, CLR_UNFOCUS, CLR_URGENT, NCOLORS
 } color_t;
 
 /* Global data */
 static int   running;
 static void *cache;
-static Atom atoms[natoms];
+static Atom atoms[NATOMS];
 static int (*xerrorxlib)(Display *, XErrorEvent *);
-static unsigned long colors[ncolors];
+static unsigned long colors[NCOLORS];
 static list_t *screens;
 
 /* Conversion functions */
-static keymap_t key2sym[] = {
-	{key_left    , XK_Left },
-	{key_right   , XK_Right},
-	{key_up      , XK_Up   },
-	{key_down    , XK_Down },
-	{key_home    , XK_Home },
-	{key_end     , XK_End  },
-	{key_pageup  , XK_Prior},
-	{key_pagedown, XK_Next },
-	{key_f1      , XK_F1   },
-	{key_f2      , XK_F2   },
-	{key_f3      , XK_F3   },
-	{key_f4      , XK_F4   },
-	{key_f5      , XK_F5   },
-	{key_f6      , XK_F6   },
-	{key_f7      , XK_F7   },
-	{key_f8      , XK_F8   },
-	{key_f9      , XK_F9   },
-	{key_f10     , XK_F10  },
-	{key_f11     , XK_F11  },
-	{key_f12     , XK_F12  },
+static event_map_t ev2sym[] = {
+	{EV_LEFT    , XK_Left },
+	{EV_RIGHT   , XK_Right},
+	{EV_UP      , XK_Up   },
+	{EV_DOWN    , XK_Down },
+	{EV_HOME    , XK_Home },
+	{EV_END     , XK_End  },
+	{EV_PAGEUP  , XK_Prior},
+	{EV_PAGEDOWN, XK_Next },
+	{EV_F1      , XK_F1   },
+	{EV_F2      , XK_F2   },
+	{EV_F3      , XK_F3   },
+	{EV_F4      , XK_F4   },
+	{EV_F5      , XK_F5   },
+	{EV_F6      , XK_F6   },
+	{EV_F7      , XK_F7   },
+	{EV_F8      , XK_F8   },
+	{EV_F9      , XK_F9   },
+	{EV_F10     , XK_F10  },
+	{EV_F11     , XK_F11  },
+	{EV_F12     , XK_F12  },
 };
 
 /* - Modifiers */
@@ -109,45 +109,45 @@ static unsigned int mod2x(mod_t mod)
 }
 
 /* - Keycodes */
-static Key_t x2key(KeySym sym)
+static event_t xk2ev(KeySym sym)
 {
-	keymap_t *km = map_getr(key2sym,sym);
-	return km ? km->key : sym;
+	event_map_t *em = map_getr(ev2sym,sym);
+	return em ? em->ev : sym;
 }
 
-static KeySym key2x(Key_t key)
+static KeySym ev2xk(event_t ev)
 {
-	keymap_t *km = map_get(key2sym,key);
-	return km ? km->sym : key;
+	event_map_t *em = map_get(ev2sym,ev);
+	return em ? em->sym : ev;
 }
 
-static Key_t x2btn(int btn)
+static event_t xb2ev(int btn)
 {
-	return btn + key_mouse0;
+	return btn + EV_MOUSE0;
 }
 
-static int btn2x(Key_t key)
+static int ev2xb(event_t ev)
 {
-	return key - key_mouse0;
+	return ev - EV_MOUSE0;
 }
 
 /* - Pointers */
-static ptr_t x2ptr(XEvent *_ev)
+static ptr_t x2ptr(XEvent *xe)
 {
-	XKeyEvent *ev = &_ev->xkey;
-	return (ptr_t){ev->x, ev->y, ev->x_root, ev->y_root};
+	XKeyEvent *xke = &xe->xkey;
+	return (ptr_t){xke->x, xke->y, xke->x_root, xke->y_root};
 }
 
-static Window getfocus(win_t *root, XEvent *event)
+static Window getfocus(win_t *root, XEvent *xe)
 {
 	int revert;
 	Window focus = PointerRoot;
-	if (event->type == KeyPress || event->type == KeyRelease)
+	if (xe->type == KeyPress || xe->type == KeyRelease)
 		XGetInputFocus(root->sys->dpy, &focus, &revert);
 	if (focus == PointerRoot)
-		focus = event->xkey.subwindow;
+		focus = xe->xkey.subwindow;
 	if (focus == None)
-		focus = event->xkey.window;
+		focus = xe->xkey.window;
 	return focus;
 }
 
@@ -177,7 +177,7 @@ static int strut_add(win_t *root, win_t *win)
 	unsigned long ret_items, bytes_left;
 	unsigned char *xdata;
 	int status = XGetWindowProperty(win->sys->dpy, win->sys->xid,
-			atoms[net_strut], 0L, 4L, False, XA_CARDINAL,
+			atoms[NET_STRUT], 0L, 4L, False, XA_CARDINAL,
 			&ret_type, &ret_size, &ret_items, &bytes_left, &xdata);
 	if (status != Success || ret_size != 32 || ret_items != 4)
 		return 0;
@@ -276,7 +276,7 @@ static unsigned long get_color(Display *dpy, const char *name)
 }
 
 /* Callbacks */
-static void process_event(int type, XEvent *ev, win_t *root)
+static void process_event(int type, XEvent *xe, win_t *root)
 {
 	Display  *dpy = root->sys->dpy;
 	win_t *win = NULL;
@@ -287,56 +287,56 @@ static void process_event(int type, XEvent *ev, win_t *root)
 	if (type == KeyPress    || type == KeyRelease    ||
 	    type == ButtonPress || type == ButtonRelease ||
 	    type == MotionNotify) {
-		Window xid = getfocus(root, ev);
+		Window xid = getfocus(root, xe);
 		if (!(win = win_find(dpy,xid,0)))
 			return;
-		ptr = x2ptr(ev);
-		mod = x2mod(ev->xkey.state, type==KeyRelease||type==ButtonRelease);
+		ptr = x2ptr(xe);
+		mod = x2mod(xe->xkey.state, type==KeyRelease||type==ButtonRelease);
 	}
 
 	/* Split based on event */
 	if (type == KeyPress) {
-		while (XCheckTypedEvent(dpy, KeyPress, ev));
-		KeySym sym = XKeycodeToKeysym(dpy, ev->xkey.keycode, 0);
-		printf("got key %c %hhx\n", x2key(sym), mod2int(mod));
-		wm_handle_key(win, x2key(sym), mod, ptr);
+		while (XCheckTypedEvent(dpy, KeyPress, xe));
+		KeySym sym = XKeycodeToKeysym(dpy, xe->xkey.keycode, 0);
+		printf("got xe %c %hhx\n", xk2ev(sym), mod2int(mod));
+		wm_handle_event(win, xk2ev(sym), mod, ptr);
 	}
 	else if (type == KeyRelease) {
 		//printf("release: %d\n", type);
 	}
 	else if (type == ButtonPress) {
-		if (wm_handle_key(win, x2btn(ev->xbutton.button), mod, ptr))
-			XGrabPointer(dpy, ev->xbutton.root, True, PointerMotionMask|ButtonReleaseMask,
+		if (wm_handle_event(win, xb2ev(xe->xbutton.button), mod, ptr))
+			XGrabPointer(dpy, xe->xbutton.root, True, PointerMotionMask|ButtonReleaseMask,
 					GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
 		else {
 			printf("resending event\n");
-			XSendEvent(win->sys->dpy, ev->xbutton.window,    True,  NoEventMask, ev);
-			XSendEvent(win->sys->dpy, ev->xbutton.window,    False, NoEventMask, ev);
-			XSendEvent(win->sys->dpy, ev->xbutton.root,      True,  NoEventMask, ev);
-			XSendEvent(win->sys->dpy, ev->xbutton.root,      False, NoEventMask, ev);
-			XSendEvent(win->sys->dpy, ev->xbutton.subwindow, True,  NoEventMask, ev);
-			XSendEvent(win->sys->dpy, ev->xbutton.subwindow, False, NoEventMask, ev);
+			XSendEvent(win->sys->dpy, xe->xbutton.window,    True,  NoEventMask, xe);
+			XSendEvent(win->sys->dpy, xe->xbutton.window,    False, NoEventMask, xe);
+			XSendEvent(win->sys->dpy, xe->xbutton.root,      True,  NoEventMask, xe);
+			XSendEvent(win->sys->dpy, xe->xbutton.root,      False, NoEventMask, xe);
+			XSendEvent(win->sys->dpy, xe->xbutton.subwindow, True,  NoEventMask, xe);
+			XSendEvent(win->sys->dpy, xe->xbutton.subwindow, False, NoEventMask, xe);
 		}
 	}
 	else if (type == ButtonRelease) {
 		XUngrabPointer(dpy, CurrentTime);
-		wm_handle_key(win, x2btn(ev->xbutton.button), mod, ptr);
+		wm_handle_event(win, xb2ev(xe->xbutton.button), mod, ptr);
 	}
 	else if (type == MotionNotify) {
-		while (XCheckTypedEvent(dpy, MotionNotify, ev));
+		while (XCheckTypedEvent(dpy, MotionNotify, xe));
 		wm_handle_ptr(win, ptr);
 	}
 	else if (type == EnterNotify || type == LeaveNotify) {
 		printf("enter: %d\n", type);
-		key_t key = EnterNotify ? key_enter : key_leave;
-		if ((win = win_find(dpy,ev->xcrossing.window,0)))
-			wm_handle_key(win, key, MOD(), PTR());
+		event_t ev = EnterNotify ? EV_ENTER : EV_LEAVE;
+		if ((win = win_find(dpy,xe->xcrossing.window,0)))
+			wm_handle_event(win, ev, MOD(), PTR());
 	}
 	else if (type == FocusIn || type == FocusOut) {
 		//printf("focus: %d\n", type);
-		key_t key = FocusIn ? key_focus : key_unfocus;
-		if ((win = win_find(dpy,ev->xfocus.window,0)))
-			wm_handle_key(win, key, MOD(), PTR());
+		event_t ev = FocusIn ? EV_FOCUS : EV_UNFOCUS;
+		if ((win = win_find(dpy,xe->xfocus.window,0)))
+			wm_handle_event(win, ev, MOD(), PTR());
 	}
 	else if (type == ConfigureNotify) {
 		printf("configure: %d\n", type);
@@ -345,22 +345,22 @@ static void process_event(int type, XEvent *ev, win_t *root)
 		printf("map: %d\n", type);
 	}
 	else if (type == UnmapNotify) {
-		if ((win = win_find(dpy,ev->xunmap.window,0)) &&
-		     win->sys->state == st_show) {
+		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
+		     win->sys->state == ST_SHOW) {
 			if (!strut_del(root, win))
 				wm_remove(win);
 			else
 				wm_update();
-			win->sys->state = st_hide;
+			win->sys->state = ST_HIDE;
 		}
 	}
 	else if (type == DestroyNotify) {
 		//printf("destroy: %d\n", type);
-		if ((win = win_find(dpy,ev->xdestroywindow.window,0)))
+		if ((win = win_find(dpy,xe->xdestroywindow.window,0)))
 			win_remove(win);
 	}
 	else if (type == ConfigureRequest) {
-		XConfigureRequestEvent *cre = &ev->xconfigurerequest;
+		XConfigureRequestEvent *cre = &xe->xconfigurerequest;
 		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
 				type, (int)cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
@@ -373,18 +373,18 @@ static void process_event(int type, XEvent *ev, win_t *root)
 
 		/* This seems necessary for, but causes flicker
 		 * there could be a better way to do this */
-		if ((win = win_find(dpy,ev->xmaprequest.window,0)))
+		if ((win = win_find(dpy,xe->xmaprequest.window,0)))
 			sys_move(win, win->x, win->y, win->w, win->h);
 	}
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
-		if ((win = win_find(dpy,ev->xmaprequest.window,1))) {
+		if ((win = win_find(dpy,xe->xmaprequest.window,1))) {
 			if (!strut_add(root, win))
 				wm_insert(win);
 			else
 				wm_update();
 		}
-		XMapWindow(dpy,ev->xmaprequest.window);
+		XMapWindow(dpy,xe->xmaprequest.window);
 	}
 	else {
 		printf("unknown event: %d\n", type);
@@ -412,7 +412,7 @@ static int xerror(Display *dpy, XErrorEvent *err)
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
 	//printf("sys_move: %p - %d,%d  %dx%d\n", win, x, y, w, h);
-	int b = 2*BORDER;
+	int b = 2*border;
 	win->x = x; win->y = y;
 	win->w = MAX(w,1+b); win->h = MAX(h,1+b);
 	w      = MAX(w-b,1); h      = MAX(h-b,1);
@@ -420,9 +420,9 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 
 	/* Flush events, so moving window doesn't cause re-focus
 	 * There's probably a better way to do this */
-	XEvent ev;
+	XEvent xe;
 	XSync(win->sys->dpy, False);
-	while (XCheckMaskEvent(win->sys->dpy, EnterWindowMask|LeaveWindowMask, &ev))
+	while (XCheckMaskEvent(win->sys->dpy, EnterWindowMask|LeaveWindowMask, &xe))
 		printf("Skipping enter/leave event\n");
 }
 
@@ -439,9 +439,9 @@ void sys_focus(win_t *win)
 	/* Set border on focused window */
 	static win_t *last = NULL;
 	if (last)
-		XSetWindowBorder(last->sys->dpy, last->sys->xid, colors[clr_unfocus]);
-	XSetWindowBorder(win->sys->dpy, win->sys->xid, colors[clr_focus]);
-	XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, BORDER);
+		XSetWindowBorder(last->sys->dpy, last->sys->xid, colors[CLR_UNFOCUS]);
+	XSetWindowBorder(win->sys->dpy, win->sys->xid, colors[CLR_FOCUS]);
+	XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
 	last = win;
 
 	/* Set actual focus */
@@ -450,9 +450,9 @@ void sys_focus(win_t *win)
 	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &(XEvent){
 		.type                 = ClientMessage,
 		.xclient.window       = win->sys->xid,
-		.xclient.message_type = atoms[wm_proto],
+		.xclient.message_type = atoms[WM_PROTO],
 		.xclient.format       = 32,
-		.xclient.data.l[0]    = atoms[wm_focus],
+		.xclient.data.l[0]    = atoms[WM_FOCUS],
 		.xclient.data.l[1]    = CurrentTime,
 	});
 }
@@ -461,52 +461,52 @@ void sys_show(win_t *win, state_t state)
 {
 	win->sys->state = state;
 	switch (state) {
-	case st_show:
+	case ST_SHOW:
 		printf("sys_show: show\n");
 		XMapWindow(win->sys->dpy, win->sys->xid);
 		XSync(win->sys->dpy, False);
 		return;
-	case st_full:
+	case ST_FULL:
 		printf("sys_show: full\n");
 		return;
-	case st_shade:
+	case ST_SHADE:
 		printf("sys_show: shade\n");
 		return;
-	case st_icon:
+	case ST_ICON:
 		printf("sys_show: icon\n");
 		return;
-	case st_hide:
+	case ST_HIDE:
 		printf("sys_show: hide\n");
 		XUnmapWindow(win->sys->dpy, win->sys->xid);
 		return;
 	}
 }
 
-void sys_watch(win_t *win, Key_t key, mod_t mod)
+void sys_watch(win_t *win, event_t ev, mod_t mod)
 {
-	//printf("sys_watch: %p - %x %hhx\n", win, key, mod);
+	//printf("sys_watch: %p - %x %hhx\n", win, ev, mod);
 	XWindowAttributes attr;
 	XGetWindowAttributes(win->sys->dpy, win->sys->xid, &attr);
 	long mask = attr.your_event_mask;
-	if (key_mouse0 <= key && key <= key_mouse7)
-		XGrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid, False,
+	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7)
+		XGrabButton(win->sys->dpy, ev2xb(ev), mod2x(mod), win->sys->xid, False,
 				mod.up ? ButtonReleaseMask : ButtonPressMask,
 				GrabModeAsync, GrabModeAsync, None, None);
-	else if (key == key_enter)
+	else if (ev == EV_ENTER)
 		XSelectInput(win->sys->dpy, win->sys->xid, EnterWindowMask|mask);
-	else if (key == key_leave)
+	else if (ev == EV_LEAVE)
 		XSelectInput(win->sys->dpy, win->sys->xid, LeaveWindowMask|mask);
-	else if (key == key_focus || key == key_unfocus)
+	else if (ev == EV_FOCUS || ev == EV_UNFOCUS)
 		XSelectInput(win->sys->dpy, win->sys->xid, FocusChangeMask|mask);
 	else
-		XGrabKey(win->sys->dpy, XKeysymToKeycode(win->sys->dpy, key2x(key)),
+		XGrabKey(win->sys->dpy, XKeysymToKeycode(win->sys->dpy, ev2xk(ev)),
 				mod2x(mod), win->sys->xid, True, GrabModeAsync, GrabModeAsync);
 }
 
-void sys_unwatch(win_t *win, Key_t key, mod_t mod)
+void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 {
-	if (key_mouse0 <= key && key <= key_mouse7)
-		XUngrabButton(win->sys->dpy, btn2x(key), mod2x(mod), win->sys->xid);
+	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7)
+		XUngrabButton(win->sys->dpy, ev2xb(ev), mod2x(mod), win->sys->xid);
 }
 
 list_t *sys_info(win_t *win)
@@ -542,8 +542,8 @@ win_t *sys_init(void)
 	Window   xid;
 
 	/* Load configuration */
-	BORDER     = conf_get_int("main.border",     BORDER);
-	NO_CAPTURE = conf_get_int("main.no-capture", NO_CAPTURE);
+	border     = conf_get_int("main.border",     border);
+	no_capture = conf_get_int("main.no-capture", no_capture);
 
 	/* Open the display */
 	if (!(dpy = XOpenDisplay(NULL)))
@@ -552,13 +552,13 @@ win_t *sys_init(void)
 		error("Unable to get root window");
 
 	/* Setup X11 data */
-	atoms[wm_proto]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
-	atoms[wm_focus]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
-	atoms[net_strut] = XInternAtom(dpy, "_NET_WM_STRUT", False);
+	atoms[WM_PROTO]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
+	atoms[WM_FOCUS]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
+	atoms[NET_STRUT] = XInternAtom(dpy, "_NET_WM_STRUT", False);
 
-	colors[clr_focus]   = get_color(dpy, "#a0a0ff");
-	colors[clr_unfocus] = get_color(dpy, "#101066");
-	colors[clr_urgent]  = get_color(dpy, "#ff0000");
+	colors[CLR_FOCUS]   = get_color(dpy, "#a0a0ff");
+	colors[CLR_UNFOCUS] = get_color(dpy, "#101066");
+	colors[CLR_URGENT]  = get_color(dpy, "#ff0000");
 	printf("colors = #%06lx #%06lx #%06lx\n", colors[0], colors[1], colors[2]);
 
 	/* Select window management events */
@@ -571,7 +571,7 @@ win_t *sys_init(void)
 void sys_run(win_t *root)
 {
 	/* Add each initial window */
-	if (!NO_CAPTURE) {
+	if (!no_capture) {
 		unsigned int nkids;
 		Window par, xid, *kids = NULL;
 		if (XQueryTree(root->sys->dpy, root->sys->xid,
@@ -590,9 +590,9 @@ void sys_run(win_t *root)
 	running = 1;
 	while (running)
 	{
-		XEvent ev;
-		XNextEvent(root->sys->dpy, &ev);
-		process_event(ev.type, &ev, root);
+		XEvent xe;
+		XNextEvent(root->sys->dpy, &xe);
+		process_event(xe.type, &xe, root);
 	}
 }
 

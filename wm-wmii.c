@@ -25,20 +25,20 @@
 #ifndef MODKEY
 #define MODKEY alt
 #endif
-static int MARGIN = 0;
-static int STACK  = 25;
+static int margin = 0;
+static int stack  = 25;
 
 /* Enums */
 typedef enum {
-	none, move, resize
+	NONE, MOVE, RESIZE
 } drag_t;
 
 typedef enum {
-	split, stack, max, tab
+	SPLIT, STACK, FULL, TAB
 } mode_t;
 
 typedef enum {
-	tiling, floating
+	TILING, FLOATING
 } layer_t;
 
 /* Window structure types */
@@ -137,9 +137,9 @@ static win_t *get_focus(void)
 	if (!wm_tag || !wm_dpy)
 		return NULL;
 	switch (wm_dpy->layer) {
-	case tiling:
+	case TILING:
 		return wm_col && wm_row ? wm_row->win : NULL;
-	case floating:
+	case FLOATING:
 		return wm_flt ? wm_flt->win : NULL;
 	}
 	return NULL;
@@ -155,14 +155,14 @@ static int searchl(tag_t *tag, win_t *target,
 			if (_dpy) *_dpy = dpy;
 			if (_col) *_col = col;
 			if (_row) *_row = row;
-			return tiling;
+			return TILING;
 		}
 	}
 	tag_foreach_flt(tag, dpy, flt, win) {
 		if (win == target) {
 			if (_dpy) *_dpy = dpy;
 			if (_flt) *_flt = flt;
-			return floating;
+			return FLOATING;
 		}
 	}
 	return -1;
@@ -173,15 +173,15 @@ static int search(tag_t *tag, win_t *target,
 {
 	list_t *dpy, *col, *row, *flt;
 	switch (searchl(tag, target, &dpy, &col, &row, &flt)) {
-	case tiling:
+	case TILING:
 		if (_dpy) *_dpy = DPY(dpy);
 		if (_col) *_col = COL(col);
 		if (_row) *_row = ROW(row);
-		return tiling;
-	case floating:
+		return TILING;
+	case FLOATING:
 		if (_dpy) *_dpy = DPY(dpy);
 		if (_flt) *_flt = FLT(flt);
-		return floating;
+		return FLOATING;
 	}
 	return -1;
 }
@@ -190,12 +190,12 @@ static int search(tag_t *tag, win_t *target,
 static void set_mode(win_t *win, mode_t mode)
 {
 	col_t *col;
-	if (tiling != search(wm_tag, win, NULL, &col, NULL, NULL))
+	if (TILING != search(wm_tag, win, NULL, &col, NULL, NULL))
 		return;
 	printf("set_mode: %p, %d -> %d\n",
 			col, col->mode, mode);
 	col->mode = mode;
-	if (col->mode == split)
+	if (col->mode == SPLIT)
 		for (list_t *cur = col->rows; cur; cur = cur->next) {
 			row_t *row = cur->data;
 			row->height = wm_dpy->geom->h;
@@ -216,7 +216,7 @@ static void set_focus(win_t *win)
 	 *   this prevents stealing all mouse clicks from client windows,
 	 * - A better way may be to re-send mouse clicks to client windows
 	 *   using the return value from wm_handle_key */
-	for (int i = key_mouse1; i < key_mouse7; i++) {
+	for (int i = EV_MOUSE1; i < EV_MOUSE7; i++) {
 		if (wm_focus)
 			sys_watch(wm_focus, i, MOD());
 		sys_unwatch(win, i, MOD());
@@ -224,16 +224,16 @@ static void set_focus(win_t *win)
 
 	dpy_t *dpy; col_t *col; row_t *row; flt_t *flt;
 	switch (search(wm_tag, win, &dpy, &col, &row, &flt)) {
-	case tiling:
+	case TILING:
 		wm_dpy = dpy;
 		wm_col = col;
 		wm_row = row;
-		dpy->layer = tiling;
+		dpy->layer = TILING;
 		break;
-	case floating:
+	case FLOATING:
 		wm_dpy = dpy;
 		wm_flt = flt;
-		dpy->layer = floating;
+		dpy->layer = FLOATING;
 		break;
 	}
 	sys_focus(win);
@@ -245,7 +245,7 @@ static void set_move(win_t *win, ptr_t ptr, drag_t drag)
 	printf("set_move: %d - %p@%d,%d\n",
 			drag, win, ptr.rx, ptr.ry);
 	move_mode = drag;
-	if (drag == move || drag == resize) {
+	if (drag == MOVE || drag == RESIZE) {
 		move_layer = searchl(wm_tag, win, NULL,
 				&move_lcol, &move_lrow, &move_lflt);
 		if (move_layer < 0)
@@ -272,8 +272,8 @@ static void print_txt(void)
 		win_t *geom = dpy->geom;
 		printf("  dpy:     <%-9p [%p->%p] >%-9p %c=%-9p - %d,%d %dx%d\n",
 				ldpy->prev, ldpy, ldpy->data, ldpy->next,
-				dpy->layer == tiling   ? 'c' : 'f',
-				dpy->layer == tiling   ? (void*)dpy->col : (void*)dpy->flt,
+				dpy->layer == TILING ? 'c' : 'f',
+				dpy->layer == TILING ? (void*)dpy->col : (void*)dpy->flt,
 				geom->x, geom->y, geom->h, geom->w);
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next) {
 		col_t *col = lcol->data;
@@ -305,7 +305,7 @@ static layer_t cut_win(win_t *win, tag_t *tag)
 	list_t *ldpy, *lcol, *lrow, *lflt;
 	layer_t layer = searchl(tag, win, &ldpy, &lcol, &lrow, &lflt);
 
-	if (layer == tiling) {
+	if (layer == TILING) {
 		dpy_t *dpy = DPY(ldpy);
 		col_t *col = COL(lcol);
 		col->row  = lrow->prev ? lrow->prev->data :
@@ -318,12 +318,12 @@ static layer_t cut_win(win_t *win, tag_t *tag)
 		}
 	}
 
-	if (layer == floating) {
+	if (layer == FLOATING) {
 		dpy_t *dpy = DPY(ldpy);
 		dpy->flts = list_remove(dpy->flts, lflt, 1);
 		dpy->flt  = dpy->flts ? list_last(dpy->flts)->data : NULL;
 		if (!dpy->flt && dpy->col && dpy->col->row)
-			dpy->layer = tiling;
+			dpy->layer = TILING;
 	}
 
 	return layer;
@@ -352,7 +352,7 @@ static void put_win_col(win_t *win, tag_t *tag, dpy_t *dpy, col_t *col)
 	tag->dpy           = dpy;
 	tag->dpy->col      = col;
 	tag->dpy->col->row = row;
-	tag->dpy->layer    = tiling;
+	tag->dpy->layer    = TILING;
 
 	row->height = dpy->geom->h / MAX(nrows,1);
 	if (nrows == 0) {
@@ -377,15 +377,15 @@ static void put_win_flt(win_t *win, tag_t *tag, dpy_t *dpy)
 	dpy->flts = list_append(dpy->flts, flt);
 	tag->dpy        = dpy;
 	tag->dpy->flt   = flt;
-	tag->dpy->layer = floating;
+	tag->dpy->layer = FLOATING;
 }
 
 /* Insert a window into a tag */
 static void put_win(win_t *win, tag_t *tag, layer_t layer)
 {
-	if (layer == tiling)
+	if (layer == TILING)
 		put_win_col(win, tag, tag->dpy, tag->dpy->col);
-	if (layer == floating)
+	if (layer == FLOATING)
 		put_win_flt(win, tag, tag->dpy);
 }
 
@@ -399,7 +399,7 @@ static void shift_window(win_t *win, int col, int row)
 	print_txt();
 	printf("shift_window: >>>\n");
 	list_t *ldpy, *lcol, *lrow, *lflt;
-	if (tiling != searchl(wm_tag, win, &ldpy, &lcol, &lrow, &lflt))
+	if (TILING != searchl(wm_tag, win, &ldpy, &lcol, &lrow, &lflt))
 		return;
 	dpy_t *dpy = ldpy->data;
 	if (row != 0) {
@@ -477,11 +477,11 @@ static void shift_focus(int cols, int rows)
 	if (rows != 0 && wm_focus) {
 		/* Move focus up/down */
 		list_t *dpy, *col, *row;
-		if (tiling != searchl(wm_tag, wm_focus, &dpy, &col, &row, NULL))
+		if (TILING != searchl(wm_tag, wm_focus, &dpy, &col, &row, NULL))
 			return;
 		row_t *next = get_next(row, rows > 0)->data;
 		set_focus(next->win);
-		if (COL(col)->mode != split)
+		if (COL(col)->mode != SPLIT)
 			wm_update();
 	}
 	if (cols != 0) {
@@ -489,7 +489,7 @@ static void shift_focus(int cols, int rows)
 		list_t *dpy, *col, *row, *ndpy, *ncol = NULL;
 		if (wm_focus) {
 			/* Currently focused on a window */
-			if (tiling != searchl(wm_tag, wm_focus, &dpy, &col, &row, NULL))
+			if (TILING != searchl(wm_tag, wm_focus, &dpy, &col, &row, NULL))
 				return;
 			ncol = cols > 0 ? col->next : col->prev;
 		} else {
@@ -623,7 +623,7 @@ static void wm_update_cols(dpy_t *dpy)
 
 	/* Scale horizontally */
 	x  = dpy->geom->x;
-	mx = dpy->geom->w - (list_length(dpy->cols)+1)*MARGIN;
+	mx = dpy->geom->w - (list_length(dpy->cols)+1)*margin;
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next)
 		tx += COL(lcol)->width;
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next)
@@ -638,39 +638,39 @@ static void wm_update_cols(dpy_t *dpy)
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next)
 			ty += ROW(lrow)->height;
 		y  = dpy->geom->y;
-		my = dpy->geom->h - (MARGIN + (nrows-1)* MARGIN    + MARGIN);
-		sy = dpy->geom->h - (MARGIN + (nrows-1)*(MARGIN/2) + MARGIN)
-		                  -           (nrows-1)* STACK;
+		my = dpy->geom->h - (margin + (nrows-1)* margin    + margin);
+		sy = dpy->geom->h - (margin + (nrows-1)*(margin/2) + margin)
+		                  -           (nrows-1)* stack;
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 			win_t *win = ROW(lrow)->win;
 			win->h = ROW(lrow)->height;
-			state_t state = st_show;
+			state_t state = ST_SHOW;
 			int height = 0;
 			switch (col->mode) {
-			case split:
-				sys_move(win, x+MARGIN, y+MARGIN,
+			case SPLIT:
+				sys_move(win, x+margin, y+margin,
 					col->width, win->h * ((float)my / ty));
 				height = win->h;
-				y += height + MARGIN;
+				y += height + margin;
 				break;
-			case stack:
+			case STACK:
 				if (lrow->next && ROW(lrow->next)->win == col->row->win) {
 					/* Hack to prevent flashing */
 					win_t *next = ROW(lrow->next)->win;
-					sys_move(next, x+MARGIN, y+MARGIN+STACK+MARGIN/2,
+					sys_move(next, x+margin, y+margin+stack+margin/2,
 						col->width, sy);
-					sys_show(next, st_show);
+					sys_show(next, ST_SHOW);
 				}
 				int isfocus = win == col->row->win;
-				state  = isfocus ? st_show : st_shade;
+				state  = isfocus ? ST_SHOW : ST_SHADE;
 				sys_show(win, state);
-				sys_move(win, x+MARGIN, y+MARGIN, col->width, sy);
-				y += (isfocus ? sy : STACK) + (MARGIN/2);
+				sys_move(win, x+margin, y+margin, col->width, sy);
+				y += (isfocus ? sy : stack) + (margin/2);
 				break;
-			case max:
-			case tab:
-				sys_move(win, x+MARGIN, 0+MARGIN,
-					col->width, dpy->geom->h-2*MARGIN);
+			case FULL:
+			case TAB:
+				sys_move(win, x+margin, 0+margin,
+					col->width, dpy->geom->h-2*margin);
 				break;
 			}
 			ROW(lrow)->state = state;
@@ -679,7 +679,7 @@ static void wm_update_cols(dpy_t *dpy)
 				sys_raise(win);
 			ROW(lrow)->height = win->h;
 		}
-		x += col->width + MARGIN;
+		x += col->width + margin;
 	}
 }
 
@@ -696,9 +696,9 @@ void wm_update(void)
 	for (list_t *tag = wm ->tags; tag; tag = tag->next)
 		if (tag->data != wm_tag) {
 			tag_foreach_col(TAG(tag), dpy, col, row, win)
-					sys_show(win, st_hide);
+					sys_show(win, ST_HIDE);
 			tag_foreach_flt(TAG(tag), dpy, flt, win)
-					sys_show(win, st_hide);
+					sys_show(win, ST_HIDE);
 		}
 
 	/* Refresh the display */
@@ -713,10 +713,10 @@ void wm_update(void)
 		set_focus(wm_focus);
 }
 
-int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
+int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 {
 	if (!win || win == wm_dpy->geom) return 0;
-	//printf("wm_handle_key: %p - %x %c%c%c%c%c\n", win, key,
+	//printf("wm_handle_event: %p - %x %c%c%c%c%c\n", win, ev,
 	//	mod.up    ? '^' : 'v',
 	//	mod.alt   ? 'a' : '-',
 	//	mod.ctrl  ? 'c' : '-',
@@ -724,16 +724,16 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	//	mod.win   ? 'w' : '-');
 
 	/* Mouse movement */
-	if (key == key_mouse1)
+	if (ev == EV_MOUSE1)
 		raise_float(win);
-	if (key_mouse0 <= key && key <= key_mouse7) {
-		if (key == key_mouse1 && mod.MODKEY && !mod.up)
-			return set_move(win,ptr,move),   1;
-		if (key == key_mouse3 && mod.MODKEY && !mod.up)
-			return set_move(win,ptr,resize), 1;
-		if (move_mode != none && mod.up)
-			return set_move(win,ptr,none),   1;
-		if (key == key_mouse1 && !mod.up && win->state == st_shade)
+	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7) {
+		if (ev == EV_MOUSE1 && mod.MODKEY && !mod.up)
+			return set_move(win,ptr,MOVE),   1;
+		if (ev == EV_MOUSE3 && mod.MODKEY && !mod.up)
+			return set_move(win,ptr,RESIZE), 1;
+		if (move_mode != NONE && mod.up)
+			return set_move(win,ptr,NONE),   1;
+		if (ev == EV_MOUSE1 && !mod.up && win->state == ST_SHADE)
 			return set_focus(win), wm_update(), 0;
 		return 0;
 	}
@@ -745,19 +745,19 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	/* Misc */
 	if (mod.MODKEY) {
 #ifdef DEBUG
-		if (key == key_f1) return raise_float(win), 1;
-		if (key == key_f2) return set_focus(win), 1;
-		if (key == key_f3) return sys_show(win, st_show),  1;
-		if (key == key_f4) return sys_show(win, st_hide),  1;
-		if (key == key_f7) return sys_show(win, st_shade), 1;
+		if (ev == EV_F1) return raise_float(win), 1;
+		if (ev == EV_F2) return set_focus(win), 1;
+		if (ev == EV_F3) return sys_show(win, ST_SHOW),  1;
+		if (ev == EV_F4) return sys_show(win, ST_HIDE),  1;
+		if (ev == EV_F7) return sys_show(win, ST_SHADE), 1;
 #endif
-		if (key == key_f5) return wm_update(),    1;
-		if (key == key_f6) return print_txt(),    1;
-		if (key == 'q')    return sys_exit(),     1;
+		if (ev == EV_F5) return wm_update(),    1;
+		if (ev == EV_F6) return print_txt(),    1;
+		if (ev == 'q')   return sys_exit(),     1;
 	}
 
 	/* Floating layer */
-	if (key == ' ') {
+	if (ev == ' ') {
 		if (mod.MODKEY && mod.shift)
 			return set_layer(win), 1;
 		if (mod.MODKEY)
@@ -766,7 +766,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 
 	/* Movement commands */
 	if (mod.MODKEY && mod.shift) {
-		switch (key) {
+		switch (ev) {
 		case 'h': return shift_window(wm_focus,-1, 0), 1;
 		case 'j': return shift_window(wm_focus, 0,+1), 1;
 		case 'k': return shift_window(wm_focus, 0,-1), 1;
@@ -775,7 +775,7 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 		}
 	}
 	else if (mod.MODKEY) {
-		switch (key) {
+		switch (ev) {
 		case 'h': return shift_focus(-1, 0), 1;
 		case 'j': return shift_focus( 0,+1), 1;
 		case 'k': return shift_focus( 0,-1), 1;
@@ -786,18 +786,18 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 
 	/* Column mode commands */
 	if (mod.MODKEY) {
-		switch (key) {
-		case 'd': return set_mode(win, split), 1;
-		case 's': return set_mode(win, stack), 1;
-		case 'm': return set_mode(win, max),   1;
-		case 't': return set_mode(win, tab),   1;
+		switch (ev) {
+		case 'd': return set_mode(win, SPLIT), 1;
+		case 's': return set_mode(win, STACK), 1;
+		case 'm': return set_mode(win, FULL),  1;
+		case 't': return set_mode(win, TAB),   1;
 		default: break;
 		}
 	}
 
 	/* Tag switching */
-	if (mod.MODKEY && '0' <= key && key <= '9') {
-		int name = key - '0';
+	if (mod.MODKEY && '0' <= ev && ev <= '9') {
+		int name = ev - '0';
 		if (mod.shift)
 			tag_set(win, name);
 		else
@@ -806,16 +806,16 @@ int wm_handle_key(win_t *win, Key_t key, mod_t mod, ptr_t ptr)
 	}
 
 	/* Focus change */
-	if (key == key_enter && win->state != st_shade)
+	if (ev == EV_ENTER && win->state != ST_SHADE)
 		return set_focus(win), 1;
 
-	if (key_mouse0 <= key && key <= key_mouse7)
+	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7)
 		return set_focus(win), 0;
 
 	/* Reset focus after after focus change,
 	 * not sure what is causing the focus change in the first place
 	 * but preventing that would be a better solution */
-	if (key == key_focus)
+	if (ev == EV_FOCUS)
 		sys_focus(wm_focus ?: wm->root);
 
 	return 0;
@@ -826,14 +826,14 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 	//printf("wm_handle_ptr: %p - %d,%d %d,%d (%d) -- \n",
 	//		cwin, ptr.x, ptr.y, ptr.rx, ptr.ry, move_mode);
 
-	if (move_mode == none)
+	if (move_mode == NONE)
 		return 0;
 
 	int dx = ptr.rx - move_prev.rx;
 	int dy = ptr.ry - move_prev.ry;
 	move_prev = ptr;
 
-	if (move_layer == tiling && move_mode == resize) {
+	if (move_layer == TILING && move_mode == RESIZE) {
 		list_t *vert = move_dir.v < 0 ? move_lrow->prev : move_lrow->next;
 		list_t *horz = move_dir.h < 0 ? move_lcol->prev : move_lcol->next;
 		if (vert) {
@@ -847,12 +847,12 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 		wm_update();
 	}
 
-	if (move_layer == floating) {
+	if (move_layer == FLOATING) {
 		flt_t *flt = move_lflt->data;
 		win_t *win = flt->win;
-		if (move_mode == move)
+		if (move_mode == MOVE)
 			sys_move(win, win->x+dx, win->y+dy, win->w, win->h);
-		else if (move_mode == resize)
+		else if (move_mode == RESIZE)
 			sys_move(win,
 				win->x + dx * (move_dir.h < 0),
 				win->y + dy * (move_dir.v < 0),
@@ -872,8 +872,8 @@ void wm_insert(win_t *win)
 
 	/* Initialize window */
 	win->wm = new0(win_wm_t);
-	sys_watch(win, key_enter,  MOD());
-	sys_watch(win, key_focus,  MOD());
+	sys_watch(win, EV_ENTER, MOD());
+	sys_watch(win, EV_FOCUS, MOD());
 
 	/* Add to screen */
 	put_win(win, wm_tag, wm_dpy->layer);
@@ -901,8 +901,8 @@ void wm_init(win_t *root)
 	printf("wm_init: %p\n", root);
 
 	/* Load configuration */
-	MARGIN = conf_get_int("main.margin", MARGIN);
-	STACK  = conf_get_int("main.stack",  STACK);
+	margin = conf_get_int("main.margin", margin);
+	stack  = conf_get_int("main.stack",  stack);
 
 	wm          = new0(wm_t);
 	wm->root    = root;
@@ -910,20 +910,20 @@ void wm_init(win_t *root)
 	wm->tag     = tag_new(wm->screens, 1);
 	wm->tags    = list_insert(NULL, wm->tag);
 
-	Key_t keys_e[] = {key_enter, key_focus};
-	Key_t keys_s[] = {'h', 'j', 'k', 'l', 'q', ' ',
+	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
+	event_t ev_s[] = {'h', 'j', 'k', 'l', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
-	Key_t keys_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
+	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-		key_f1, key_f2, key_f3, key_f4,  key_f5,  key_f6,
-		key_f7, key_f8, key_f9, key_f10, key_f11, key_f12,
-		key_mouse1, key_mouse3};
-	for (int i = 0; i < countof(keys_e); i++)
-		sys_watch(root, keys_e[i],  MOD());
-	for (int i = 0; i < countof(keys_m); i++)
-		sys_watch(root, keys_m[i], MOD(.MODKEY=1));
-	for (int i = 0; i < countof(keys_s); i++)
-		sys_watch(root, keys_s[i], MOD(.MODKEY=1,.shift=1));
+		EV_F1, EV_F2, EV_F3, EV_F4,  EV_F5,  EV_F6,
+		EV_F7, EV_F8, EV_F9, EV_F10, EV_F11, EV_F12,
+		EV_MOUSE1, EV_MOUSE3};
+	for (int i = 0; i < countof(ev_e); i++)
+		sys_watch(root, ev_e[i],  MOD());
+	for (int i = 0; i < countof(ev_m); i++)
+		sys_watch(root, ev_m[i], MOD(.MODKEY=1));
+	for (int i = 0; i < countof(ev_s); i++)
+		sys_watch(root, ev_s[i], MOD(.MODKEY=1,.shift=1));
 }
 
 void wm_free(win_t *root)
@@ -933,12 +933,12 @@ void wm_free(win_t *root)
 	while (tag->dpys) { dpy_t *dpy = tag->dpys->data;
 	while (dpy->cols) { col_t *col = dpy->cols->data;
 	while (col->rows) { row_t *row = col->rows->data;
-		sys_show(row->win, st_show);
+		sys_show(row->win, ST_SHOW);
 		free(row->win->wm);
 	col->rows = list_remove(col->rows, col->rows, 1); }
 	dpy->cols = list_remove(dpy->cols, dpy->cols, 1); }
 	while (dpy->flts) { flt_t *flt = dpy->flts->data;
-		sys_show(flt->win, st_show);
+		sys_show(flt->win, ST_SHOW);
 		free(flt->win->wm);
 	dpy->flts = list_remove(dpy->flts, dpy->flts, 1); }
 	tag->dpys = list_remove(tag->dpys, tag->dpys, 1); }
