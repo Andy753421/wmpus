@@ -31,6 +31,7 @@ typedef enum {
 	ST_SHADE, // show titlebar only
 	ST_ICON,  // iconified/minimized
 	ST_HIDE,  // completely hidden
+	ST_CLOSE, // close the window
 } state_t;
 
 /* Basic window type */

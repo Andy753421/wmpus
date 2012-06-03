@@ -755,6 +755,9 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 		if (ev == EV_F6) return print_txt(),    1;
 		if (ev == 'q')   return sys_exit(),     1;
 	}
+	if (mod.MODKEY && mod.shift) {
+		if (ev == 'c')   return sys_show(win, ST_CLOSE), 1;
+	}
 
 	/* Floating layer */
 	if (ev == ' ') {
@@ -911,7 +914,7 @@ void wm_init(win_t *root)
 	wm->tags    = list_insert(NULL, wm->tag);
 
 	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
-	event_t ev_s[] = {'h', 'j', 'k', 'l', 'q', ' ',
+	event_t ev_s[] = {'h', 'j', 'k', 'l', 'c', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',

@@ -346,7 +346,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
-		     win->sys->state == ST_SHOW) {
+		     win->sys->state != ST_HIDE) {
 			if (!strut_del(root, win))
 				wm_remove(win);
 			else
@@ -478,6 +478,10 @@ void sys_show(win_t *win, state_t state)
 	case ST_HIDE:
 		printf("sys_show: hide\n");
 		XUnmapWindow(win->sys->dpy, win->sys->xid);
+		return;
+	case ST_CLOSE:
+		printf("sys_show: close\n");
+		XDestroyWindow(win->sys->dpy, win->sys->xid);
 		return;
 	}
 }
