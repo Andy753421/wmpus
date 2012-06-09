@@ -74,11 +74,11 @@ static void conf_set(const char *key, int num, const char *str)
 	if (str) {
 		entry->type = STRING;
 		entry->str  = strdup(str);
-		printf("set_str: %s = %s\n", key, str);
+		//printf("set_str: %s = %s\n", key, str);
 	} else {
 		entry->type = NUMBER;
 		entry->num  = num;
-		printf("set_num: %s = %d\n", key, num);
+		//printf("set_num: %s = %d\n", key, num);
 	}
 	tsearch(entry, &conf, conf_cmp);
 }
@@ -103,7 +103,7 @@ static void load_file(const char *path)
 	char key[256]={}, val[256]={}, fullkey[256]={};
 	FILE *fd = fopen(path, "rt");
 	if (!fd) return;
-	printf("load_file: %s\n", path);
+	//printf("load_file: %s\n", path);
 	while (fgets(line, sizeof(line), fd)) {
 		/* Find special characters */
 		char *lbrace = strchr(           line   , '[');
@@ -127,7 +127,7 @@ static void load_file(const char *path)
 					section, strtrim(key));
 			if (!strchr(fullkey, ' ')) {
 				conf_set_str(fullkey, val);
-				printf("  [%s] = [%s]\n", fullkey, val);
+				//printf("  [%s] = [%s]\n", fullkey, val);
 			}
 		}
 		else if (section[0] && equal) {
@@ -147,7 +147,7 @@ static void load_file(const char *path)
 					conf_set_int(fullkey, 0);
 				else
 					conf_set_str(fullkey, trim);
-				printf("  [%s] = [%s]\n", fullkey, trim);
+				//printf("  [%s] = [%s]\n", fullkey, trim);
 			}
 		}
 	}

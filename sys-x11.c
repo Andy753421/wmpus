@@ -403,6 +403,8 @@ static int xerror(Display *dpy, XErrorEvent *err)
 	    (err->request_code == X_GrabKey           && err->error_code == BadAccess  ) ||
 	    (err->request_code == X_CopyArea          && err->error_code == BadDrawable))
 		return 0;
+	if (err->request_code == X_ChangeWindowAttributes && err->error_code == BadAccess)
+		error("Another window manager is already running");
 	return xerrorxlib(dpy, err);
 }
 
@@ -568,7 +570,7 @@ win_t *sys_init(void)
 	colors[CLR_FOCUS]   = get_color(dpy, "#a0a0ff");
 	colors[CLR_UNFOCUS] = get_color(dpy, "#101066");
 	colors[CLR_URGENT]  = get_color(dpy, "#ff0000");
-	printf("colors = #%06lx #%06lx #%06lx\n", colors[0], colors[1], colors[2]);
+	//printf("colors = #%06lx #%06lx #%06lx\n", colors[0], colors[1], colors[2]);
 
 	/* Select window management events */
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
