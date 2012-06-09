@@ -678,6 +678,15 @@ static void wm_update_cols(dpy_t *dpy)
  *******************************/
 void wm_update(void)
 {
+	/* Updates window sizes */
+	for (list_t *ldpy = wm_tag->dpys; ldpy; ldpy = ldpy->next)
+		wm_update_cols(ldpy->data);
+	tag_foreach_flt(wm_tag, ldpy, lflt, win) {
+		flt_t *flt = lflt->data;
+		sys_move(win, flt->x, flt->y, flt->w, flt->h);
+		sys_raise(flt->win);
+	}
+
 	/* Show/hide tags */
 	tag_foreach_col(wm_tag, dpy, col, row, win)
 		sys_show(win, ROW(row)->state);
@@ -691,14 +700,7 @@ void wm_update(void)
 					sys_show(win, ST_HIDE);
 		}
 
-	/* Refresh the display */
-	for (list_t *ldpy = wm_tag->dpys; ldpy; ldpy = ldpy->next)
-		wm_update_cols(ldpy->data);
-	tag_foreach_flt(wm_tag, ldpy, lflt, win) {
-		flt_t *flt = lflt->data;
-		sys_move(win, flt->x, flt->y, flt->w, flt->h);
-		sys_raise(flt->win);
-	}
+	/* Set focused window */
 	if (wm_focus)
 		set_focus(wm_focus);
 }

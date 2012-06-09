@@ -362,17 +362,19 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
 				type, (int)cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
-		XConfigureWindow(dpy, cre->window, cre->value_mask, &(XWindowChanges){
-			.x      = cre->x,
-			.y      = cre->y,
-			.width  = cre->width,
-			.height = cre->height,
-		});
-
-		/* This seems necessary for, but causes flicker
-		 * there could be a better way to do this */
-		if ((win = win_find(dpy,xe->xmaprequest.window,0)))
-			sys_move(win, win->x, win->y, win->w, win->h);
+		if ((win = win_find(dpy,xe->xmaprequest.window,1))) {
+			XSendEvent(dpy, cre->window, False, StructureNotifyMask, &(XEvent){
+				.xconfigure.type              = ConfigureNotify,
+				.xconfigure.display           = win->sys->dpy,
+				.xconfigure.event             = win->sys->xid,
+				.xconfigure.window            = win->sys->xid,
+				.xconfigure.x                 = win->x,
+				.xconfigure.y                 = win->y,
+				.xconfigure.width             = win->w,
+				.xconfigure.height            = win->h,
+			});
+			XSync(win->sys->dpy, False);
+		}
 	}
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
@@ -382,7 +384,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 			else
 				wm_update();
 		}
-		XMapWindow(dpy,xe->xmaprequest.window);
+		XMapWindow(dpy, xe->xmaprequest.window);
 	}
 	else {
 		printf("unknown event: %d\n", type);
