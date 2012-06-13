@@ -26,11 +26,11 @@
 
 /* Window states */
 typedef enum {
+	ST_HIDE,  // completely hidden
 	ST_SHOW,  // show as regular window
 	ST_FULL,  // fullscreen/maximized
 	ST_SHADE, // show titlebar only
 	ST_ICON,  // iconified/minimized
-	ST_HIDE,  // completely hidden
 	ST_CLOSE, // close the window
 } state_t;
 

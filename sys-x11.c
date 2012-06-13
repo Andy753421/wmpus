@@ -40,7 +40,6 @@ struct win_sys {
 	struct {
 		int left, right, top, bottom;
 	} strut;
-	state_t  state;
 };
 
 typedef struct {
@@ -400,12 +399,12 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
-		     win->sys->state != ST_HIDE) {
+		     win->state != ST_HIDE) {
 			if (!strut_del(root, win))
 				wm_remove(win);
 			else
 				wm_update();
-			win->sys->state = ST_HIDE;
+			win->state = ST_HIDE;
 		}
 	}
 	else if (type == DestroyNotify) {
@@ -418,7 +417,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
 				type, (int)cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
-		if ((win = win_find(dpy,xe->xmaprequest.window,1))) {
+		if ((win = win_find(dpy,xe->xconfigurerequest.window,1))) {
 			XSendEvent(dpy, cre->window, False, StructureNotifyMask, &(XEvent){
 				.xconfigure.type              = ConfigureNotify,
 				.xconfigure.display           = win->sys->dpy,
@@ -435,14 +434,15 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == MapRequest) {
 		printf("map_req: %d\n", type);
-		if ((win = win_find(dpy,xe->xmaprequest.window,1))) {
+		if ((win = win_find(dpy,xe->xmaprequest.window,1)) &&
+		     win->state == ST_HIDE) {
 			XSelectInput(win->sys->dpy, win->sys->xid, PropertyChangeMask);
 			if (!strut_add(root, win))
 				wm_insert(win);
 			else
 				wm_update();
 		}
-		XMapWindow(dpy, xe->xmaprequest.window);
+		sys_show(win, ST_SHOW);
 	}
 	else if (type == ClientMessage) {
 		XClientMessageEvent *cme = &xe->xclient;
@@ -456,7 +456,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		     cme->data.l[2] == atoms[NET_FULL])) {
 			if (cme->data.l[0] == 1 || /* _NET_WM_STATE_ADD    */
 			   (cme->data.l[0] == 2 && /* _NET_WM_STATE_TOGGLE */
-			    win->sys->state != ST_FULL))
+			    win->state != ST_FULL))
 				sys_show(win, ST_FULL);
 			else
 				sys_show(win, ST_SHOW);
@@ -543,16 +543,20 @@ void sys_focus(win_t *win)
 void sys_show(win_t *win, state_t state)
 {
 	switch (state) {
+	case ST_HIDE:
+		printf("sys_show: hide %p\n", win);
+		XUnmapWindow(win->sys->dpy, win->sys->xid);
+		break;
 	case ST_SHOW:
-		printf("sys_show: show\n");
-		if (win->sys->state == ST_FULL)
+		printf("sys_show: show %p\n", win);
+		if (win->state == ST_FULL)
 			sys_move(win, win->x, win->y, win->w, win->h);
 		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
 		XMapWindow(win->sys->dpy, win->sys->xid);
 		XSync(win->sys->dpy, False);
 		break;
 	case ST_FULL:
-		printf("sys_show: full\n");
+		printf("sys_show: full %p\n", win);
 		win_t *screen = NULL;
 		for (list_t *cur = screens; cur; cur = cur->next) {
 			screen = cur->data;
@@ -570,18 +574,14 @@ void sys_show(win_t *win, state_t state)
 		XRaiseWindow(win->sys->dpy, win->sys->xid);
 		break;
 	case ST_SHADE:
-		printf("sys_show: shade\n");
+		printf("sys_show: shade %p\n", win);
 		XMapWindow(win->sys->dpy, win->sys->xid);
 		break;
 	case ST_ICON:
-		printf("sys_show: icon\n");
-		break;
-	case ST_HIDE:
-		printf("sys_show: hide\n");
-		XUnmapWindow(win->sys->dpy, win->sys->xid);
+		printf("sys_show: icon %p\n", win);
 		break;
 	case ST_CLOSE:
-		printf("sys_show: close\n");
+		printf("sys_show: close %p\n", win);
 		if (!win_msg(win, WM_DELETE)) {
 			XGrabServer(win->sys->dpy);
 			XSetErrorHandler(xnoerror);
@@ -594,7 +594,7 @@ void sys_show(win_t *win, state_t state)
 		XDestroyWindow(win->sys->dpy, win->sys->xid);
 		break;
 	}
-	win->sys->state = state;
+	win->state = state;
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
