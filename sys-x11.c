@@ -347,6 +347,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		Window xid = getfocus(root, xe);
 		if (!(win = win_find(dpy,xid,0)))
 			return;
+		//printf("button-press %p\n", win);
 		ptr = x2ptr(xe);
 		mod = x2mod(xe->xkey.state, type==KeyRelease||type==ButtonRelease);
 	}
@@ -362,11 +363,14 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		//printf("release: %d\n", type);
 	}
 	else if (type == ButtonPress) {
-		if (wm_handle_event(win, xb2ev(xe->xbutton.button), mod, ptr))
+		if (wm_handle_event(win, xb2ev(xe->xbutton.button), mod, ptr)) {
+			//printf("grab pointer\n");
 			XGrabPointer(dpy, xe->xbutton.root, True, PointerMotionMask|ButtonReleaseMask,
 					GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-		else
-			XAllowEvents(win->sys->dpy, ReplayPointer, CurrentTime);
+		} else {
+			//printf("allow events\n");
+			XAllowEvents(win->sys->dpy, ReplayPointer, xe->xbutton.time);
+		}
 	}
 	else if (type == ButtonRelease) {
 		XUngrabPointer(dpy, CurrentTime);
@@ -378,7 +382,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == EnterNotify || type == LeaveNotify) {
 		printf("%s: %d\n", type==EnterNotify?"enter":"leave", type);
-		event_t ev = EnterNotify ? EV_ENTER : EV_LEAVE;
+		event_t ev = type == EnterNotify ? EV_ENTER : EV_LEAVE;
 		if ((win = win_find(dpy,xe->xcrossing.window,0)))
 			wm_handle_event(win, ev, MOD(), PTR());
 	}
@@ -441,8 +445,11 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		XMapWindow(dpy, xe->xmaprequest.window);
 	}
 	else if (type == ClientMessage) {
-		printf("msg: %d\n", type);
 		XClientMessageEvent *cme = &xe->xclient;
+		printf("msg: %d - %ld %ld,%ld,%ld,%ld,%ld\n",
+				type, cme->message_type,
+				cme->data.l[0], cme->data.l[1], cme->data.l[2],
+				cme->data.l[3], cme->data.l[4]);
 		if ((win = win_find(dpy,cme->window,0))     &&
 		    (cme->message_type == atoms[NET_STATE]) &&
 		    (cme->data.l[1] == atoms[NET_FULL] ||
@@ -456,7 +463,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		}
 	}
 	else if (type == PropertyNotify) {
-		printf("prop: %d\n", type);
+		printf("prop: %d - %d\n", type, xe->xproperty.state);
 	}
 	else {
 		printf("unknown event: %d\n", type);
