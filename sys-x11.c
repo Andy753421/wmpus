@@ -209,28 +209,6 @@ static int strut_del(win_t *root, win_t *win)
 	return strut_copy(root, win, -1);
 }
 
-#if 0
-static int is_fullscreen(win_t *win)
-{
-	Atom ret_type;
-	int ret_size;
-	unsigned long ret_items, bytes_left;
-	unsigned char *xdata;
-	int status = XGetWindowProperty(win->sys->dpy, win->sys->xid,
-			atoms[NET_FULL], 0L, 1L, False, XA_ATOM,
-			&ret_type, &ret_size, &ret_items, &bytes_left, &xdata);
-	printf("is_fullscreen:\n");
-	printf("\t%d\n", status);
-	printf("\t%d\n", ret_size);
-	printf("\t%ld\n", ret_items);
-	printf("\t%p\n", xdata);
-	if (xdata)
-	printf("\t%d\n", xdata[0]);
-	return status == Success && ret_size == 32 && ret_items == 1 &&
-		xdata[0] == atoms[NET_FULL];
-}
-#endif
-
 /* Window functions */
 static win_t *win_new(Display *dpy, Window xid)
 {
@@ -297,6 +275,52 @@ static int win_viewable(win_t *win)
 	else
 		return True;
 }
+
+static int win_msg(win_t *win, atom_t msg)
+{
+	int n, found = 0;
+	Atom *protos;
+	if (!XGetWMProtocols(win->sys->dpy, win->sys->xid, &protos, &n))
+		return 0;
+
+	while (!found && n--)
+		found = protos[n] == atoms[msg];
+	XFree(protos);
+	if (!found)
+		return 0;
+
+	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &(XEvent){
+		.type                 = ClientMessage,
+		.xclient.window       = win->sys->xid,
+		.xclient.message_type = atoms[WM_PROTO],
+		.xclient.format       = 32,
+		.xclient.data.l[0]    = atoms[msg],
+		.xclient.data.l[1]    = CurrentTime,
+	});
+	return 1;
+}
+
+#if 0
+static int win_full(win_t *win)
+{
+	Atom ret_type;
+	int ret_size;
+	unsigned long ret_items, bytes_left;
+	unsigned char *xdata;
+	int status = XGetWindowProperty(win->sys->dpy, win->sys->xid,
+			atoms[NET_FULL], 0L, 1L, False, XA_ATOM,
+			&ret_type, &ret_size, &ret_items, &bytes_left, &xdata);
+	printf("is_fullscreen:\n");
+	printf("\t%d\n", status);
+	printf("\t%d\n", ret_size);
+	printf("\t%ld\n", ret_items);
+	printf("\t%p\n", xdata);
+	if (xdata)
+	printf("\t%d\n", xdata[0]);
+	return status == Success && ret_size == 32 && ret_items == 1 &&
+		xdata[0] == atoms[NET_FULL];
+}
+#endif
 
 /* Drawing functions */
 static unsigned long get_color(Display *dpy, const char *name)
@@ -492,14 +516,7 @@ void sys_focus(win_t *win)
 	/* Set actual focus */
 	XSetInputFocus(win->sys->dpy, win->sys->xid,
 			RevertToPointerRoot, CurrentTime);
-	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &(XEvent){
-		.type                 = ClientMessage,
-		.xclient.window       = win->sys->xid,
-		.xclient.message_type = atoms[WM_PROTO],
-		.xclient.format       = 32,
-		.xclient.data.l[0]    = atoms[WM_FOCUS],
-		.xclient.data.l[1]    = CurrentTime,
-	});
+	win_msg(win, WM_FOCUS);
 
 	/* Set border on focused window */
 	static win_t *last = NULL;
