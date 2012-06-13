@@ -35,7 +35,7 @@ typedef enum {
 
 typedef enum {
 	SPLIT, STACK, FULL, TAB
-} mode_t;
+} layout_t;
 
 typedef enum {
 	TILING, FLOATING
@@ -45,44 +45,44 @@ typedef enum {
 struct win_wm { };
 
 typedef struct {
-	win_t  *win;     // the window
-	int     height;  // win height in _this_ tag
-	state_t state;   // state of window
+	win_t   *win;     // the window
+	int      height;  // win height in _this_ tag
+	state_t  state;   // state of window
 } row_t;
 
 typedef struct {
-	list_t *rows;    // of row_t
-	row_t  *row;     // focused row
-	int     width;   // column width
-	mode_t  mode;    // display mode
+	list_t  *rows;    // of row_t
+	row_t   *row;     // focused row
+	int      width;   // column width
+	layout_t layout;  // column layout
 } col_t;
 
 typedef struct {
-	win_t *win;      // the window
-	int x, y, w, h;  // position of window (in this tag)
-	state_t state;   // state of window
+	win_t   *win;     // the window
+	int x, y, w, h;   // position of window (in this tag)
+	state_t  state;   // state of window
 } flt_t;
 
 typedef struct {
-	list_t *cols;    // of col_t
-	col_t  *col;     // focused col
-	list_t *flts;    // of flt_t
-	flt_t  *flt;     // focused flt
-	layer_t layer;   // focused layer
-	win_t  *geom;    // display size and position
+	list_t  *cols;    // of col_t
+	col_t   *col;     // focused col
+	list_t  *flts;    // of flt_t
+	flt_t   *flt;     // focused flt
+	layer_t  layer;   // focused layer
+	win_t   *geom;    // display size and position
 } dpy_t;
 
 typedef struct {
-	list_t *dpys;    // of dpy_t
-	dpy_t  *dpy;     // focused dpy
-	int     name;    // tag name
+	list_t  *dpys;    // of dpy_t
+	dpy_t   *dpy;     // focused dpy
+	int      name;    // tag name
 } tag_t;
 
 typedef struct {
-	list_t *tags;    // of tag_t
-	tag_t  *tag;     // focused tag
-	win_t  *root;    // root/background window
-	list_t *screens; // display geometry
+	list_t  *tags;    // of tag_t
+	tag_t   *tag;     // focused tag
+	win_t   *root;    // root/background window
+	list_t  *screens; // display geometry
 } wm_t;
 
 #define WIN(node) ((win_t*)(node)->data)
@@ -186,16 +186,16 @@ static int search(tag_t *tag, win_t *target,
 	return -1;
 }
 
-/* Set the mode for the windows column in the current tag */
-static void set_mode(win_t *win, mode_t mode)
+/* Set the layout for the windows column in the current tag */
+static void set_mode(win_t *win, layout_t layout)
 {
 	col_t *col;
 	if (TILING != search(wm_tag, win, NULL, &col, NULL, NULL))
 		return;
 	printf("set_mode: %p, %d -> %d\n",
-			col, col->mode, mode);
-	col->mode = mode;
-	if (col->mode == SPLIT)
+			col, col->layout, layout);
+	col->layout = layout;
+	if (col->layout == SPLIT)
 		for (list_t *cur = col->rows; cur; cur = cur->next) {
 			row_t *row = cur->data;
 			row->height = wm_dpy->geom->h;
@@ -269,7 +269,7 @@ static void print_txt(void)
 		col_t *col = lcol->data;
 		printf("    col:   <%-9p [%p->%p] >%-9p r=%-9p - %dpx @ %d\n",
 				lcol->prev, lcol, lcol->data, lcol->next,
-				col->row, col->width, col->mode);
+				col->row, col->width, col->layout);
 	for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 		row_t *row = lrow->data;
 		win_t *win = row->win;
@@ -471,7 +471,7 @@ static void shift_focus(int cols, int rows)
 			return;
 		row_t *next = get_next(row, rows > 0)->data;
 		set_focus(next->win);
-		if (COL(col)->mode != SPLIT)
+		if (COL(col)->layout != SPLIT)
 			wm_update();
 	}
 	if (cols != 0) {
@@ -636,7 +636,7 @@ static void wm_update_cols(dpy_t *dpy)
 			win->h = ROW(lrow)->height;
 			state_t state = ST_SHOW;
 			int height = 0;
-			switch (col->mode) {
+			switch (col->layout) {
 			case SPLIT:
 				sys_move(win, x+margin, y+margin,
 					col->width, win->h * ((float)my / ty));
@@ -779,7 +779,7 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 		}
 	}
 
-	/* Column mode commands */
+	/* Column layout commands */
 	if (mod.MODKEY) {
 		switch (ev) {
 		case 'd': return set_mode(win, SPLIT), 1;

@@ -21,7 +21,6 @@ endif
 ifeq ($(SYS),win32)
 CC        ?= i686-pc-mingw32-gcc
 PROG      ?= wmpus.exe
-CFLAGS    += -D_MODE_T_
 LDFLAGS   += -lgdi32
 endif
 
