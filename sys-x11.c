@@ -49,7 +49,7 @@ typedef struct {
 } event_map_t;
 
 typedef enum {
-	WM_PROTO, WM_FOCUS,
+	WM_PROTO, WM_FOCUS, WM_DELETE,
 	NET_STATE, NET_FULL, NET_STRUT,
 	NATOMS
 } atom_t;
@@ -487,6 +487,12 @@ static int xerror(Display *dpy, XErrorEvent *err)
 	return xerrorxlib(dpy, err);
 }
 
+static int xnoerror(Display *dpy, XErrorEvent *err)
+{
+	return 0;
+}
+
+
 /********************
  * System functions *
  ********************/
@@ -536,7 +542,6 @@ void sys_focus(win_t *win)
 
 void sys_show(win_t *win, state_t state)
 {
-	/* Restore from fullscreen */
 	switch (state) {
 	case ST_SHOW:
 		printf("sys_show: show\n");
@@ -577,6 +582,15 @@ void sys_show(win_t *win, state_t state)
 		break;
 	case ST_CLOSE:
 		printf("sys_show: close\n");
+		if (!win_msg(win, WM_DELETE)) {
+			XGrabServer(win->sys->dpy);
+			XSetErrorHandler(xnoerror);
+			XSetCloseDownMode(win->sys->dpy, DestroyAll);
+			XKillClient(win->sys->dpy, win->sys->xid);
+			XSync(win->sys->dpy, False);
+			XSetErrorHandler(xerror);
+			XUngrabServer(win->sys->dpy);
+		}
 		XDestroyWindow(win->sys->dpy, win->sys->xid);
 		break;
 	}
@@ -654,11 +668,12 @@ win_t *sys_init(void)
 		error("Unable to get root window");
 
 	/* Setup X11 data */
-	atoms[WM_PROTO]  = XInternAtom(dpy, "WM_PROTOCOLS",  False);
-	atoms[WM_FOCUS]  = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
-	atoms[NET_STATE] = XInternAtom(dpy, "_NET_WM_STATE", False);
-	atoms[NET_FULL]  = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
-	atoms[NET_STRUT] = XInternAtom(dpy, "_NET_WM_STRUT", False);
+	atoms[WM_PROTO]    = XInternAtom(dpy, "WM_PROTOCOLS",             False);
+	atoms[WM_FOCUS]    = XInternAtom(dpy, "WM_TAKE_FOCUS",            False);
+	atoms[WM_DELETE]   = XInternAtom(dpy, "WM_DELETE_WINDOW",         False);
+	atoms[NET_STATE]   = XInternAtom(dpy, "_NET_WM_STATE",            False);
+	atoms[NET_FULL]    = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
+	atoms[NET_STRUT]   = XInternAtom(dpy, "_NET_WM_STRUT",            False);
 
 	colors[CLR_FOCUS]   = get_color(dpy, "#a0a0ff");
 	colors[CLR_UNFOCUS] = get_color(dpy, "#101066");
