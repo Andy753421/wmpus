@@ -902,7 +902,7 @@ void wm_init(win_t *root)
 	wm->tag     = tag_new(wm->screens, 1);
 	wm->tags    = list_insert(NULL, wm->tag);
 
-	event_t ev_e[] = {EV_ENTER, EV_FOCUS, EV_MOUSE1};
+	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
 	event_t ev_s[] = {'h', 'j', 'k', 'l', 'c', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
