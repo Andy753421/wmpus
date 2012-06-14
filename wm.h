@@ -31,6 +31,9 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr);
 /* Called for each mouse movement */
 int wm_handle_ptr(win_t *win, ptr_t ptr);
 
+/* Called when a window changes states */
+int wm_handle_state(win_t *win, state_t prev, state_t next);
+
 /* Begin managing a window, called for each new window */
 void wm_insert(win_t *win);
 

@@ -47,7 +47,6 @@ struct win_wm { };
 typedef struct {
 	win_t   *win;     // the window
 	int      height;  // win height in _this_ tag
-	state_t  state;   // state of window
 } row_t;
 
 typedef struct {
@@ -360,6 +359,7 @@ static void put_win_flt(win_t *win, tag_t *tag, dpy_t *dpy)
 	flt->h   = dpy->geom->h / 2;
 	flt->x   = dpy->geom->x + flt->w / 2;
 	flt->y   = dpy->geom->y + flt->h / 2;
+	flt->state = ST_SHOW;
 	if (dpy->flt) {
 		flt->x = dpy->flt->x + 20;
 		flt->y = dpy->flt->y + 20;
@@ -663,7 +663,6 @@ static void wm_update_cols(dpy_t *dpy)
 					col->width, dpy->geom->h-2*margin);
 				break;
 			}
-			ROW(lrow)->state = state;
 			sys_show(win, state);
 			if (focus == win)
 				sys_raise(win);
@@ -685,13 +684,10 @@ void wm_update(void)
 		flt_t *flt = lflt->data;
 		sys_move(win, flt->x, flt->y, flt->w, flt->h);
 		sys_raise(flt->win);
+		sys_show(flt->win, flt->state);
 	}
 
-	/* Show/hide tags */
-	tag_foreach_col(wm_tag, dpy, col, row, win)
-		sys_show(win, ROW(row)->state);
-	tag_foreach_flt(wm_tag, dpy, flt, win)
-		sys_show(win, FLT(flt)->state);
+	/* Hide other tags */
 	for (list_t *tag = wm ->tags; tag; tag = tag->next)
 		if (tag->data != wm_tag) {
 			tag_foreach_col(TAG(tag), dpy, col, row, win)
@@ -855,6 +851,24 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 	}
 
 	return 0;
+}
+
+int wm_handle_state(win_t *win, state_t prev, state_t next)
+{
+	flt_t *flt = NULL;
+
+	if (FLOATING != search(wm_tag, win, NULL, NULL, NULL, &flt)) {
+		cut_win(win, wm_tag);
+		put_win(win, wm_tag, FLOATING);
+		search(wm_tag, win, NULL, NULL, NULL, &flt);
+	}
+
+	flt->state = next;
+
+	if (prev == ST_MAX || prev == ST_FULL)
+		wm_update();
+
+	return 1;
 }
 
 void wm_insert(win_t *win)

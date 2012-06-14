@@ -454,12 +454,11 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		    (cme->message_type == atoms[NET_STATE]) &&
 		    (cme->data.l[1] == atoms[NET_FULL] ||
 		     cme->data.l[2] == atoms[NET_FULL])) {
-			if (cme->data.l[0] == 1 || /* _NET_WM_STATE_ADD    */
-			   (cme->data.l[0] == 2 && /* _NET_WM_STATE_TOGGLE */
-			    win->state != ST_FULL))
-				sys_show(win, ST_FULL);
-			else
-				sys_show(win, ST_SHOW);
+			state_t next = (cme->data.l[0] == 1 || /* _NET_WM_STATE_ADD    */
+			               (cme->data.l[0] == 2 && /* _NET_WM_STATE_TOGGLE */
+			                win->state != ST_FULL)) ? ST_FULL : ST_SHOW;
+			wm_handle_state(win, win->state, next);
+			sys_show(win, next);
 		}
 	}
 	else if (type == PropertyNotify) {
