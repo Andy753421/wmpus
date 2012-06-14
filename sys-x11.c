@@ -555,6 +555,10 @@ void sys_show(win_t *win, state_t state)
 		XMapWindow(win->sys->dpy, win->sys->xid);
 		XSync(win->sys->dpy, False);
 		break;
+	case ST_MAX:
+		printf("sys_show: max %p\n", win);
+		XMapWindow(win->sys->dpy, win->sys->xid);
+		break;
 	case ST_FULL:
 		printf("sys_show: full %p\n", win);
 		win_t *screen = NULL;

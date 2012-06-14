@@ -28,7 +28,8 @@
 typedef enum {
 	ST_HIDE,  // completely hidden
 	ST_SHOW,  // show as regular window
-	ST_FULL,  // fullscreen/maximized
+	ST_FULL,  // fullscreen (without decorations)
+	ST_MAX,   // maximized (with decorations)
 	ST_SHADE, // show titlebar only
 	ST_ICON,  // iconified/minimized
 	ST_CLOSE, // close the window
