@@ -1,8 +1,6 @@
 # wmpus - cross platofrm window manager
 # See LICENSE file for copyright and license details.
 
-undefine CC
-
 -include config.mk
 
 VERSION   ?= 0.1-p0
@@ -13,13 +11,13 @@ PREFIX    ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man
 
 ifeq ($(SYS),x11)
-CC        ?= gcc
+GCC       ?= gcc
 PROG      ?= wmpus
 LDFLAGS   += -lX11 -lXinerama
 endif
 
 ifeq ($(SYS),win32)
-CC        ?= i686-pc-mingw32-gcc
+GCC       ?= i686-pc-mingw32-gcc
 PROG      ?= wmpus.exe
 LDFLAGS   += -lgdi32
 endif
@@ -42,9 +40,9 @@ uninstall:
 	rm -f $(DESTDIR)$(MANPREFIX)/man1/wmpus.1
 
 $(PROG): main.o conf.o util.o sys-$(SYS).o wm-$(WM).o
-	$(CC) $(CFLAGS) -o $@ $+ $(LDFLAGS)
+	$(GCC) $(CFLAGS) -o $@ $+ $(LDFLAGS)
 
 %.o: %.c $(wildcard *.h) makefile
-	$(CC) $(CFLAGS) --std=gnu99 -c -o $@ $<
+	$(GCC) $(CFLAGS) --std=gnu99 -c -o $@ $<
 
 .PHONY: all clean dist install uninstall
