@@ -42,7 +42,7 @@ Margin in pixels between windows for wm-wmii. X11 default 0, Win32 default 15.
 Same as \fB-m\fR
 .TP
 .B stack\fR=\fIN\fR
-Height in pixels for non-focused windows when the column is set to stack mode
+Height in pixels for non-focused windows when the column is set to stack layout
 .SH COMPILE-TIME OPTIONS
 The windowing system backend and window management modes can be changed at
 compile-time by linking in the correct object file. Supported windowing systems
@@ -95,16 +95,16 @@ Move the currently focused window to the \fIleft\fR
 .TP
 .B Alt\-Shift\-l
 Move the currently focused window to the \fIright\fR
-.SS Column modes
+.SS Column layouts
 .TP
 .B Alt\-d
-Switch the current column to \fIsplit\fR mode
+Switch the current column to \fIsplit\fR layout
 .TP
 .B Alt\-s
-Switch the current to \fIstack\fR mode
+Switch the current to \fIstack\fR layout
 .TP
 .B Alt\-m
-Switch the current to \fImaximized\fR mode
+Switch the current to \fImaximized\fR layout
 .SS Tagging windows
 .TP
 .B Alt\-[0..n]
@@ -120,6 +120,9 @@ Toggle focus between the tiling and floating layers
 .B Alt-Shift-Space
 Move the currently focused window between the tiling and floating layers
 .SS Other commands
+.TP
+.B Alt-f
+Toggle fullscreen for the focused window
 .TP
 .B Alt-Shift-c
 Close the currently focused window
