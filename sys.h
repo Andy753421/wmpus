@@ -35,15 +35,23 @@ typedef enum {
 	ST_CLOSE, // close the window
 } state_t;
 
+/* Window types */
+typedef enum {
+	TYPE_NORMAL,
+	TYPE_DIALOG,
+} type_t;
+
 /* Basic window type */
 typedef struct win_sys win_sys_t;
 typedef struct win_wm  win_wm_t;
-typedef struct {
+typedef struct win {
 	int x, y, z;
 	int w, h;
-	state_t    state;
-	win_sys_t *sys;
-	win_wm_t  *wm;
+	state_t state;
+	type_t  type;
+	struct win *parent;
+	win_sys_t  *sys;
+	win_wm_t   *wm;
 } win_t;
 
 /* Generic key codes, also used for some other events

@@ -50,6 +50,7 @@ typedef struct {
 typedef enum {
 	WM_PROTO, WM_FOCUS, WM_DELETE,
 	NET_STATE, NET_FULL, NET_STRUT,
+	NET_TYPE, NET_DIALOG,
 	NATOMS
 } atom_t;
 
@@ -209,8 +210,12 @@ static int strut_del(win_t *root, win_t *win)
 }
 
 /* Window functions */
+static Atom win_prop(win_t *win, atom_t prop);
+static win_t *win_find(Display *dpy, Window xid, int create);
+
 static win_t *win_new(Display *dpy, Window xid)
 {
+	Window trans;
 	XWindowAttributes attr;
 	if (XGetWindowAttributes(dpy, xid, &attr))
 		if (attr.override_redirect)
@@ -223,9 +228,14 @@ static win_t *win_new(Display *dpy, Window xid)
 	win->sys      = new0(win_sys_t);
 	win->sys->dpy = dpy;
 	win->sys->xid = xid;
-	printf("win_new: %p = %p, %d (%d,%d %dx%d)\n",
+	if (win_prop(win, NET_TYPE) == atoms[NET_DIALOG])
+		win->type = TYPE_DIALOG;
+	if (XGetTransientForHint(dpy, xid, &trans))
+		win->parent = win_find(dpy, trans, 0);
+	printf("win_new: %p = %p, %d (%d,%d %dx%d) - %s\n",
 			win, dpy, (int)xid,
-			win->x, win->y, win->w, win->h);
+			win->x, win->y, win->w, win->h,
+			win->type ? "dialog" : "normal");
 	return win;
 }
 
@@ -665,12 +675,14 @@ win_t *sys_init(void)
 		error("Unable to get root window");
 
 	/* Setup X11 data */
-	atoms[WM_PROTO]    = XInternAtom(dpy, "WM_PROTOCOLS",             False);
-	atoms[WM_FOCUS]    = XInternAtom(dpy, "WM_TAKE_FOCUS",            False);
-	atoms[WM_DELETE]   = XInternAtom(dpy, "WM_DELETE_WINDOW",         False);
-	atoms[NET_STATE]   = XInternAtom(dpy, "_NET_WM_STATE",            False);
-	atoms[NET_FULL]    = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
-	atoms[NET_STRUT]   = XInternAtom(dpy, "_NET_WM_STRUT",            False);
+	atoms[WM_PROTO]    = XInternAtom(dpy, "WM_PROTOCOLS",               False);
+	atoms[WM_FOCUS]    = XInternAtom(dpy, "WM_TAKE_FOCUS",              False);
+	atoms[WM_DELETE]   = XInternAtom(dpy, "WM_DELETE_WINDOW",           False);
+	atoms[NET_STATE]   = XInternAtom(dpy, "_NET_WM_STATE",              False);
+	atoms[NET_FULL]    = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN",   False);
+	atoms[NET_STRUT]   = XInternAtom(dpy, "_NET_WM_STRUT",              False);
+	atoms[NET_TYPE]    = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE",        False);
+	atoms[NET_DIALOG]  = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
 
 	colors[CLR_FOCUS]   = get_color(dpy, "#a0a0ff");
 	colors[CLR_UNFOCUS] = get_color(dpy, "#101066");

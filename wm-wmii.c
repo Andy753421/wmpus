@@ -889,6 +889,8 @@ void wm_insert(win_t *win)
 	sys_watch(win, EV_FOCUS, MOD());
 
 	/* Add to screen */
+	if (win->type == TYPE_DIALOG || win->parent)
+		wm_dpy->layer = FLOATING;
 	put_win(win, wm_tag, wm_dpy->layer);
 
 	/* Arrange */

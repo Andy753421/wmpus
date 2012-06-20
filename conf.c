@@ -23,10 +23,11 @@
 #include "conf.h"
 
 /* Types */
-typedef enum { NUMBER, STRING } type_t;
-
 typedef struct {
-	type_t  type;
+	enum {
+		NUMBER,
+		STRING,
+	} type;
 	char   *key;
 	union {
 		int   num;
