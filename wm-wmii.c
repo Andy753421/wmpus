@@ -47,6 +47,7 @@ struct win_wm { };
 typedef struct {
 	win_t   *win;     // the window
 	int      height;  // win height in _this_ tag
+	state_t  state;   // state of window
 } row_t;
 
 typedef struct {
@@ -324,7 +325,8 @@ static layer_t cut_win(win_t *win, tag_t *tag)
 static void put_win_col(win_t *win, tag_t *tag, dpy_t *dpy, col_t *col)
 {
 	row_t *row = new0(row_t);
-	row->win = win;
+	row->win   = win;
+	row->state = win->state ?: ST_SHOW;
 
 	if (col == NULL) {
 		col = new0(col_t);
@@ -354,12 +356,12 @@ static void put_win_col(win_t *win, tag_t *tag, dpy_t *dpy, col_t *col)
 static void put_win_flt(win_t *win, tag_t *tag, dpy_t *dpy)
 {
 	flt_t *flt = new0(flt_t);
-	flt->win = win;
-	flt->w   = dpy->geom->w / 2;
-	flt->h   = dpy->geom->h / 2;
-	flt->x   = dpy->geom->x + flt->w / 2;
-	flt->y   = dpy->geom->y + flt->h / 2;
-	flt->state = ST_SHOW;
+	flt->win   = win;
+	flt->w     = dpy->geom->w / 2;
+	flt->h     = dpy->geom->h / 2;
+	flt->x     = dpy->geom->x + flt->w / 2;
+	flt->y     = dpy->geom->y + flt->h / 2;
+	flt->state = win->state ?: ST_SHOW;
 	if (dpy->flt) {
 		flt->x = dpy->flt->x + 20;
 		flt->y = dpy->flt->y + 20;
@@ -633,6 +635,10 @@ static void wm_update_cols(dpy_t *dpy)
 		                  -           (nrows-1)* stack;
 		for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 			win_t *win = ROW(lrow)->win;
+			if (ROW(lrow)->state != ST_SHOW) {
+				sys_show(win, ROW(lrow)->state);
+				continue;
+			}
 			win->h = ROW(lrow)->height;
 			state_t state = ST_SHOW;
 			int height = 0;
@@ -742,6 +748,8 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 		if (ev == EV_F5) return wm_update(),    1;
 		if (ev == EV_F6) return print_txt(),    1;
 		if (ev == 'q')   return sys_exit(),     1;
+		if (ev == 'f')   return wm_handle_state(win, win->state,
+			win->state == ST_FULL ? ST_SHOW : ST_FULL);
 	}
 	if (mod.MODKEY && mod.shift) {
 		if (ev == 'c')   return sys_show(win, ST_CLOSE), 1;
@@ -855,17 +863,16 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 
 int wm_handle_state(win_t *win, state_t prev, state_t next)
 {
+	row_t *row = NULL;
 	flt_t *flt = NULL;
 
-	if (FLOATING != search(wm_tag, win, NULL, NULL, NULL, &flt)) {
-		cut_win(win, wm_tag);
-		put_win(win, wm_tag, FLOATING);
-		search(wm_tag, win, NULL, NULL, NULL, &flt);
-	}
+	search(wm_tag, win, NULL, NULL, &row, &flt);
 
-	flt->state = next;
+	if (row) row->state = next;
+	if (flt) flt->state = next;
 
-	if (prev == ST_MAX || prev == ST_FULL)
+	if (prev == ST_MAX || prev == ST_FULL ||
+	    next == ST_MAX || next == ST_FULL)
 		wm_update();
 
 	return 1;
@@ -919,7 +926,7 @@ void wm_init(win_t *root)
 	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
 	event_t ev_s[] = {'h', 'j', 'k', 'l', 'c', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
-	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', ' ',
+	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', 'f', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 		EV_F1, EV_F2, EV_F3, EV_F4,  EV_F5,  EV_F6,
 		EV_F7, EV_F8, EV_F9, EV_F10, EV_F11, EV_F12,
