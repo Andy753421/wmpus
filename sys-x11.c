@@ -189,10 +189,10 @@ static int strut_add(win_t *root, win_t *win)
 	if (status != Success || ret_size != 32 || ret_items != 4)
 		return 0;
 
-	win->sys->strut.left   = ((int*)xdata)[0];
-	win->sys->strut.right  = ((int*)xdata)[1];
-	win->sys->strut.top    = ((int*)xdata)[2];
-	win->sys->strut.bottom = ((int*)xdata)[3];
+	win->sys->strut.left   = ((long*)xdata)[0];
+	win->sys->strut.right  = ((long*)xdata)[1];
+	win->sys->strut.top    = ((long*)xdata)[2];
+	win->sys->strut.bottom = ((long*)xdata)[3];
 	struts = list_insert(struts, win);
 	for (list_t *cur = screens; cur; cur = cur->next)
 		strut_copy(cur->data, win, 1);
