@@ -299,27 +299,19 @@ static int win_msg(win_t *win, atom_t msg)
 	return 1;
 }
 
-#if 0
-static int win_full(win_t *win)
+static Atom win_prop(win_t *win, atom_t prop)
 {
-	Atom ret_type;
-	int ret_size;
-	unsigned long ret_items, bytes_left;
-	unsigned char *xdata;
-	int status = XGetWindowProperty(win->sys->dpy, win->sys->xid,
-			atoms[NET_FULL], 0L, 1L, False, XA_ATOM,
-			&ret_type, &ret_size, &ret_items, &bytes_left, &xdata);
-	printf("is_fullscreen:\n");
-	printf("\t%d\n", status);
-	printf("\t%d\n", ret_size);
-	printf("\t%ld\n", ret_items);
-	printf("\t%p\n", xdata);
-	if (xdata)
-	printf("\t%d\n", xdata[0]);
-	return status == Success && ret_size == 32 && ret_items == 1 &&
-		xdata[0] == atoms[NET_FULL];
+	int format;
+	unsigned long nitems, bytes;
+	unsigned char *buf = NULL;
+	Atom atom, type = XA_ATOM;
+	if (XGetWindowProperty(win->sys->dpy, win->sys->xid, atoms[prop],
+			0L, sizeof(Atom), False, type, &type, &format, &nitems, &bytes, &buf) || !buf)
+		return 0;
+	atom = *(Atom *)buf;
+	XFree(buf);
+	return atom;
 }
-#endif
 
 /* Drawing functions */
 static unsigned long get_color(Display *dpy, const char *name)
@@ -436,13 +428,15 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		printf("map_req: %d\n", type);
 		if ((win = win_find(dpy,xe->xmaprequest.window,1)) &&
 		     win->state == ST_HIDE) {
+			if (win_prop(win, NET_STATE) == atoms[NET_FULL])
+				win->state = ST_FULL;
 			XSelectInput(win->sys->dpy, win->sys->xid, PropertyChangeMask);
 			if (!strut_add(root, win))
 				wm_insert(win);
 			else
 				wm_update();
-		}
-		sys_show(win, ST_SHOW);
+		} else
+			sys_show(win, ST_SHOW);
 	}
 	else if (type == ClientMessage) {
 		XClientMessageEvent *cme = &xe->xclient;
