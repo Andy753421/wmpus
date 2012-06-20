@@ -438,6 +438,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		printf("map_req: %d\n", type);
 		if ((win = win_find(dpy,xe->xmaprequest.window,1)) &&
 		     win->state == ST_HIDE) {
+			win->state = ST_SHOW;
 			if (win_prop(win, NET_STATE) == atoms[NET_FULL])
 				win->state = ST_FULL;
 			XSelectInput(win->sys->dpy, win->sys->xid, PropertyChangeMask);
@@ -445,8 +446,8 @@ static void process_event(int type, XEvent *xe, win_t *root)
 				wm_insert(win);
 			else
 				wm_update();
-		} else
-			sys_show(win, ST_SHOW);
+		}
+		sys_show(win, win->state);
 	}
 	else if (type == ClientMessage) {
 		XClientMessageEvent *cme = &xe->xclient;
