@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "util.h"
 #include "conf.h"
@@ -45,44 +46,44 @@ typedef enum {
 struct win_wm { };
 
 typedef struct {
-	win_t   *win;     // the window
-	int      height;  // win height in _this_ tag
-	state_t  state;   // state of window
+	win_t   *win;      // the window
+	int      height;   // win height in _this_ tag
+	state_t  state;    // state of window
 } row_t;
 
 typedef struct {
-	list_t  *rows;    // of row_t
-	row_t   *row;     // focused row
-	int      width;   // column width
-	layout_t layout;  // column layout
+	list_t  *rows;     // of row_t
+	row_t   *row;      // focused row
+	int      width;    // column width
+	layout_t layout;   // column layout
 } col_t;
 
 typedef struct {
-	win_t   *win;     // the window
-	int x, y, w, h;   // position of window (in this tag)
-	state_t  state;   // state of window
+	win_t   *win;      // the window
+	int x, y, w, h;    // position of window (in this tag)
+	state_t  state;    // state of window
 } flt_t;
 
 typedef struct {
-	list_t  *cols;    // of col_t
-	col_t   *col;     // focused col
-	list_t  *flts;    // of flt_t
-	flt_t   *flt;     // focused flt
-	layer_t  layer;   // focused layer
-	win_t   *geom;    // display size and position
+	list_t  *cols;     // of col_t
+	col_t   *col;      // focused col
+	list_t  *flts;     // of flt_t
+	flt_t   *flt;      // focused flt
+	layer_t  layer;    // focused layer
+	win_t   *geom;     // display size and position
 } dpy_t;
 
 typedef struct {
-	list_t  *dpys;    // of dpy_t
-	dpy_t   *dpy;     // focused dpy
-	int      name;    // tag name
+	list_t  *dpys;     // of dpy_t
+	dpy_t   *dpy;      // focused dpy
+	char     name[64]; // tag name
 } tag_t;
 
 typedef struct {
-	list_t  *tags;    // of tag_t
-	tag_t   *tag;     // focused tag
-	win_t   *root;    // root/background window
-	list_t  *screens; // display geometry
+	list_t  *tags;     // of tag_t
+	tag_t   *tag;      // focused tag
+	win_t   *root;     // root/background window
+	list_t  *screens;  // display geometry
 } wm_t;
 
 #define WIN(node) ((win_t*)(node)->data)
@@ -254,7 +255,7 @@ static void print_txt(void)
 {
 	for (list_t *ltag = wm->tags; ltag; ltag = ltag->next) {
 		tag_t *tag = ltag->data;
-		printf("tag:       <%-9p [%p->%p] >%-9p d=%-9p - %d\n",
+		printf("tag:       <%-9p [%p->%p] >%-9p d=%-9p - %s\n",
 				ltag->prev, ltag, ltag->data, ltag->next,
 				tag->dpy, tag->name);
 	for (list_t *ldpy = tag->dpys; ldpy; ldpy = ldpy->next) {
@@ -538,10 +539,10 @@ static void set_layer(win_t *win)
 }
 
 /* Allocate a new tag */
-static tag_t *tag_new(list_t *screens, int name)
+static tag_t *tag_new(list_t *screens, const char *name)
 {
 	tag_t *tag = new0(tag_t);
-	tag->name  = name;
+	strncpy(tag->name, name, sizeof(tag->name));
 	for (list_t *cur = screens; cur; cur = cur->next) {
 		dpy_t *dpy  = new0(dpy_t);
 		dpy->geom = cur->data;
@@ -557,11 +558,11 @@ static tag_t *tag_new(list_t *screens, int name)
 /* Search for a tag
  *   If it does not exist it is based on the
  *   display geometry in wm->screens */
-static tag_t *tag_find(int name)
+static tag_t *tag_find(const char *name)
 {
 	tag_t *tag = NULL;
 	for (list_t *cur = wm->tags; cur; cur = cur->next)
-		if (name == TAG(cur)->name) {
+		if (!strcmp(name, TAG(cur)->name)) {
 			tag = cur->data;
 			break;
 		}
@@ -574,10 +575,10 @@ static tag_t *tag_find(int name)
 
 /* Move the window from the current tag to the new tag
  *   Unlike wmii, only remove the current tag, not all tags */
-static void tag_set(win_t *win, int name)
+static void tag_set(win_t *win, const char *name)
 {
-	printf("tag_set: %p %d\n", win, name);
-	if (wm_tag->name == name)
+	printf("tag_set: %p %s\n", win, name);
+	if (!strcmp(wm_tag->name, name))
 		return;
 	tag_t *tag = tag_find(name);
 	layer_t layer = cut_win(win, wm_tag);
@@ -586,9 +587,9 @@ static void tag_set(win_t *win, int name)
 }
 
 /* Switch to a different tag */
-static void tag_switch(int name)
+static void tag_switch(const char *name)
 {
-	printf("tag_switch: %d\n", name);
+	printf("tag_switch: %s\n", name);
 	tag_t *old = wm_tag;
 	if ((wm_col == NULL || wm_row == NULL) && wm_flt == NULL) {
 		while (old->dpys) {
@@ -796,7 +797,7 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 
 	/* Tag switching */
 	if (mod.MODKEY && '0' <= ev && ev <= '9') {
-		int name = ev - '0';
+		char name[] = {ev, '\0'};
 		if (mod.shift)
 			tag_set(win, name);
 		else
@@ -922,7 +923,7 @@ void wm_init(win_t *root)
 	wm          = new0(wm_t);
 	wm->root    = root;
 	wm->screens = list_sort(sys_info(root), 0, sort_win);
-	wm->tag     = tag_new(wm->screens, 1);
+	wm->tag     = tag_new(wm->screens, "1");
 	wm->tags    = list_insert(NULL, wm->tag);
 
 	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
