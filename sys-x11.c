@@ -32,6 +32,7 @@
 /* Configuration */
 static int border     = 2;
 static int no_capture = 0;
+static int stack      = 25;
 
 /* Internal structures */
 struct win_sys {
@@ -584,6 +585,8 @@ void sys_show(win_t *win, state_t state)
 		break;
 	case ST_SHADE:
 		printf("sys_show: shade %p\n", win);
+		XConfigureWindow(win->sys->dpy, win->sys->xid, CWHeight,
+				&(XWindowChanges){ .height = stack });
 		XMapWindow(win->sys->dpy, win->sys->xid);
 		break;
 	case ST_ICON:
@@ -667,6 +670,7 @@ win_t *sys_init(void)
 	Window   xid;
 
 	/* Load configuration */
+	stack      = conf_get_int("main.stack",      stack);
 	border     = conf_get_int("main.border",     border);
 	no_capture = conf_get_int("main.no-capture", no_capture);
 
