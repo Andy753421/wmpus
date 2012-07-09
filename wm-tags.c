@@ -64,6 +64,11 @@ int wm_handle_ptr(win_t *cwin, ptr_t ptr)
 	return 0;
 }
 
+int wm_handle_state(win_t *win, state_t prev, state_t next)
+{
+	return 0;
+}
+
 void wm_insert(win_t *win)
 {
 	tags[tag] = list_insert(tags[tag], win);
