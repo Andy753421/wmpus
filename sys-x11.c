@@ -356,7 +356,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	/* Split based on event */
 	if (type == KeyPress) {
 		while (XCheckTypedEvent(dpy, KeyPress, xe));
-		KeySym sym = XKeycodeToKeysym(dpy, xe->xkey.keycode, 0);
+		KeySym sym = XLookupKeysym(&xe->xkey, 0);
 		printf("got xe %c %hhx\n", xk2ev(sym), mod2int(mod));
 		wm_handle_event(win, xk2ev(sym), mod, ptr);
 	}
