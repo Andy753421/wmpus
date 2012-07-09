@@ -722,10 +722,11 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7) {
 		if (ev == EV_MOUSE1 && !mod.MODKEY && !mod.up)
 			return raise_float(win),         0;
+		if ((ev == EV_MOUSE3 && mod.MODKEY && !mod.up) ||
+		    (ev == EV_MOUSE1 && mod.MODKEY && !mod.up && mod.shift))
+			return set_move(win,ptr,RESIZE), 1;
 		if (ev == EV_MOUSE1 && mod.MODKEY && !mod.up)
 			return set_move(win,ptr,MOVE),   1;
-		if (ev == EV_MOUSE3 && mod.MODKEY && !mod.up)
-			return set_move(win,ptr,RESIZE), 1;
 		if (move_mode != NONE && mod.up)
 			return set_move(win,ptr,NONE),   1;
 		if (ev == EV_MOUSE1 && !mod.up && win->state == ST_SHADE)
@@ -928,7 +929,8 @@ void wm_init(win_t *root)
 
 	event_t ev_e[] = {EV_ENTER, EV_FOCUS};
 	event_t ev_s[] = {'h', 'j', 'k', 'l', 'c', 'q', ' ',
-		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+		EV_MOUSE1, EV_MOUSE3};
 	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', 'f', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 		EV_F1, EV_F2, EV_F3, EV_F4,  EV_F5,  EV_F6,
