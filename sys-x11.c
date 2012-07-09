@@ -361,7 +361,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		wm_handle_event(win, xk2ev(sym), mod, ptr);
 	}
 	else if (type == KeyRelease) {
-		//printf("release: %d\n", type);
+		//printf("release: %lx\n", xe->xkey.window);
 	}
 	else if (type == ButtonPress) {
 		if (wm_handle_event(win, xb2ev(xe->xbutton.button), mod, ptr)) {
@@ -382,22 +382,23 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		wm_handle_ptr(win, ptr);
 	}
 	else if (type == EnterNotify || type == LeaveNotify) {
-		printf("%s: %d\n", type==EnterNotify?"enter":"leave", type);
+		printf("%s: %lx\n", type==EnterNotify?"enter":"leave",
+				xe->xcrossing.window);
 		event_t ev = type == EnterNotify ? EV_ENTER : EV_LEAVE;
 		if ((win = win_find(dpy,xe->xcrossing.window,0)))
 			wm_handle_event(win, ev, MOD(), PTR());
 	}
 	else if (type == FocusIn || type == FocusOut) {
-		//printf("focus: %d\n", type);
+		//printf("focus: %lx\n", xe->xfocus.window);
 		event_t ev = FocusIn ? EV_FOCUS : EV_UNFOCUS;
 		if ((win = win_find(dpy,xe->xfocus.window,0)))
 			wm_handle_event(win, ev, MOD(), PTR());
 	}
 	else if (type == ConfigureNotify) {
-		printf("configure: %d\n", type);
+		printf("configure: %lx\n", xe->xconfigure.window);
 	}
 	else if (type == MapNotify) {
-		printf("map: %d\n", type);
+		printf("map: %lx\n", xe->xmap.window);
 	}
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
@@ -410,14 +411,14 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		}
 	}
 	else if (type == DestroyNotify) {
-		//printf("destroy: %d\n", type);
+		//printf("destroy: %lx\n", xe->xdestroywindow.window);
 		if ((win = win_find(dpy,xe->xdestroywindow.window,0)))
 			win_remove(win);
 	}
 	else if (type == ConfigureRequest) {
 		XConfigureRequestEvent *cre = &xe->xconfigurerequest;
-		printf("configure_req: %d - %x, (0x%lx) %dx%d @ %d,%d\n",
-				type, (int)cre->window, cre->value_mask,
+		printf("configure_req: %lx - (0x%lx) %dx%d @ %d,%d\n",
+				cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
 		if ((win = win_find(dpy,xe->xconfigurerequest.window,1))) {
 			XSendEvent(dpy, cre->window, False, StructureNotifyMask, &(XEvent){
@@ -435,7 +436,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		}
 	}
 	else if (type == MapRequest) {
-		printf("map_req: %d\n", type);
+		printf("map_req: %lx\n", xe->xmaprequest.window);
 		if ((win = win_find(dpy,xe->xmaprequest.window,1)) &&
 		     win->state == ST_HIDE) {
 			win->state = ST_SHOW;
@@ -451,8 +452,8 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == ClientMessage) {
 		XClientMessageEvent *cme = &xe->xclient;
-		printf("msg: %d - %ld %ld,%ld,%ld,%ld,%ld\n",
-				type, cme->message_type,
+		printf("client_msg: %lx - %ld %ld,%ld,%ld,%ld,%ld\n",
+				cme->window, cme->message_type,
 				cme->data.l[0], cme->data.l[1], cme->data.l[2],
 				cme->data.l[3], cme->data.l[4]);
 		if ((win = win_find(dpy,cme->window,0))     &&
@@ -467,7 +468,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		}
 	}
 	else if (type == PropertyNotify) {
-		printf("prop: %d - %d\n", type, xe->xproperty.state);
+		printf("prop: %d\n", xe->xproperty.state);
 	}
 	else {
 		printf("unknown event: %d\n", type);
