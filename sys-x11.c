@@ -60,6 +60,7 @@ typedef enum {
 } color_t;
 
 /* Global data */
+static win_t *root;
 static int   running;
 static void *cache;
 static Atom atoms[NATOMS];
@@ -221,6 +222,7 @@ static win_t *win_new(Display *dpy, Window xid)
 	if (XGetWindowAttributes(dpy, xid, &attr))
 		if (attr.override_redirect)
 			return NULL;
+
 	win_t *win    = new0(win_t);
 	win->x        = attr.x;
 	win->y        = attr.y;
@@ -229,14 +231,32 @@ static win_t *win_new(Display *dpy, Window xid)
 	win->sys      = new0(win_sys_t);
 	win->sys->dpy = dpy;
 	win->sys->xid = xid;
-	if (win_prop(win, NET_TYPE) == atoms[NET_DIALOG])
-		win->type = TYPE_DIALOG;
-	if (XGetTransientForHint(dpy, xid, &trans))
-		win->parent = win_find(dpy, trans, 0);
+
+	if (root) {
+		if (strut_add(root, win))
+			win->type = TYPE_TOOLBAR;
+
+		if (win_prop(win, NET_TYPE) == atoms[NET_DIALOG])
+			win->type = TYPE_DIALOG;
+
+		if (win_prop(win, NET_STATE) == atoms[NET_FULL])
+			win->state = ST_FULL;
+
+		if (XGetTransientForHint(dpy, xid, &trans))
+			win->parent = win_find(dpy, trans, 0);
+
+		XSelectInput(dpy, xid, PropertyChangeMask);
+
+		wm_insert(win);
+	}
+
 	printf("win_new: %p = %p, %d (%d,%d %dx%d) - %s\n",
 			win, dpy, (int)xid,
 			win->x, win->y, win->w, win->h,
-			win->type ? "dialog" : "normal");
+			win->type == TYPE_NORMAL  ? "normal" :
+			win->type == TYPE_DIALOG  ? "dialog" :
+			win->type == TYPE_TOOLBAR ? "normal" : "unknown");
+
 	return win;
 }
 
@@ -273,14 +293,18 @@ static void win_free(win_t *win)
 
 static void win_remove(win_t *win)
 {
+	if (win != root) {
+		strut_del(root, win);
+		wm_remove(win);
+	}
 	tdelete(win, &cache, win_cmp);
 	win_free(win);
 }
 
-static int win_viewable(win_t *win)
+static int win_viewable(Display *dpy, Window xid)
 {
 	XWindowAttributes attr;
-	if (XGetWindowAttributes(win->sys->dpy, win->sys->xid, &attr))
+	if (XGetWindowAttributes(dpy, xid, &attr))
 		return attr.map_state == IsViewable;
 	else
 		return True;
@@ -391,12 +415,12 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == FocusIn || type == FocusOut) {
 		//printf("focus: %lx\n", xe->xfocus.window);
-		event_t ev = FocusIn ? EV_FOCUS : EV_UNFOCUS;
+		event_t ev = type == FocusIn ? EV_FOCUS : EV_UNFOCUS;
 		if ((win = win_find(dpy,xe->xfocus.window,0)))
 			wm_handle_event(win, ev, MOD(), PTR());
 	}
 	else if (type == ConfigureNotify) {
-		printf("configure: %lx\n", xe->xconfigure.window);
+		//printf("configure: %lx\n", xe->xconfigure.window);
 	}
 	else if (type == MapNotify) {
 		printf("map: %lx\n", xe->xmap.window);
@@ -404,13 +428,12 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
 		     win->state != ST_HIDE) {
-			strut_del(root, win);
-			wm_remove(win);
+			wm_handle_state(win, win->state, ST_HIDE);
 			win->state = ST_HIDE;
 		}
 	}
 	else if (type == DestroyNotify) {
-		//printf("destroy: %lx\n", xe->xdestroywindow.window);
+		printf("destroy: %lx\n", xe->xdestroywindow.window);
 		if ((win = win_find(dpy,xe->xdestroywindow.window,0)))
 			win_remove(win);
 	}
@@ -436,16 +459,10 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	}
 	else if (type == MapRequest) {
 		printf("map_req: %lx\n", xe->xmaprequest.window);
-		if ((win = win_find(dpy,xe->xmaprequest.window,1)) &&
-		     win->state == ST_HIDE) {
+		win = win_find(dpy,xe->xmaprequest.window,1);
+		// fixme, for hide -> max, etc
+		if (win->state == ST_HIDE)
 			win->state = ST_SHOW;
-			if (win_prop(win, NET_STATE) == atoms[NET_FULL])
-				win->state = ST_FULL;
-			XSelectInput(win->sys->dpy, win->sys->xid, PropertyChangeMask);
-			if (strut_add(root, win))
-				win->type = TYPE_TOOLBAR;
-			wm_insert(win);
-		}
 		sys_show(win, win->state);
 	}
 	else if (type == ClientMessage) {
@@ -696,7 +713,7 @@ win_t *sys_init(void)
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	xerrorxlib = XSetErrorHandler(xerror);
 
-	return win_find(dpy, xid, 1);
+	return root = win_find(dpy, xid, 1);
 }
 
 void sys_run(win_t *root)
@@ -707,14 +724,9 @@ void sys_run(win_t *root)
 		Window par, xid, *kids = NULL;
 		if (XQueryTree(root->sys->dpy, root->sys->xid,
 					&par, &xid, &kids, &nkids)) {
-			for(int i = 0; i < nkids; i++) {
-				win_t *win = win_find(root->sys->dpy, kids[i], 1);
-				if (win && win_viewable(win)) {
-					if (strut_add(root,win))
-						win->type = TYPE_TOOLBAR;
-					wm_insert(win);
-				}
-			}
+			for(int i = 0; i < nkids; i++)
+				if (win_viewable(root->sys->dpy, kids[i]))
+					win_find(root->sys->dpy, kids[i], 1);
 			XFree(kids);
 		}
 	}
