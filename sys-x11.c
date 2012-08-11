@@ -483,7 +483,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		}
 	}
 	else if (type == PropertyNotify) {
-		printf("prop: %d\n", xe->xproperty.state);
+		printf("prop: %lx - %d\n", xe->xproperty.window, xe->xproperty.state);
 	}
 	else {
 		printf("unknown event: %d\n", type);
