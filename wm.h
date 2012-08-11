@@ -22,9 +22,6 @@
  * The window provided to these function is generally the
  * window with the keyboard or mouse focus. */
 
-/* Refresh the window layout */
-void wm_update(void);
-
 /* Called for each watched event */
 int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr);
 

@@ -404,10 +404,8 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
 		     win->state != ST_HIDE) {
-			if (!strut_del(root, win))
-				wm_remove(win);
-			else
-				wm_update();
+			strut_del(root, win);
+			wm_remove(win);
 			win->state = ST_HIDE;
 		}
 	}
@@ -444,10 +442,9 @@ static void process_event(int type, XEvent *xe, win_t *root)
 			if (win_prop(win, NET_STATE) == atoms[NET_FULL])
 				win->state = ST_FULL;
 			XSelectInput(win->sys->dpy, win->sys->xid, PropertyChangeMask);
-			if (!strut_add(root, win))
-				wm_insert(win);
-			else
-				wm_update();
+			if (strut_add(root, win))
+				win->type = TYPE_TOOLBAR;
+			wm_insert(win);
 		}
 		sys_show(win, win->state);
 	}
@@ -712,12 +709,14 @@ void sys_run(win_t *root)
 					&par, &xid, &kids, &nkids)) {
 			for(int i = 0; i < nkids; i++) {
 				win_t *win = win_find(root->sys->dpy, kids[i], 1);
-				if (win && win_viewable(win) && !strut_add(root,win))
+				if (win && win_viewable(win)) {
+					if (strut_add(root,win))
+						win->type = TYPE_TOOLBAR;
 					wm_insert(win);
+				}
 			}
 			XFree(kids);
 		}
-		wm_update(); // For struts
 	}
 
 	/* Main loop */

@@ -124,6 +124,9 @@ static ptr_t   move_prev;
 static layer_t move_layer;
 static struct { int v, h; } move_dir;
 
+/* Prototypes */
+void wm_update(void);
+
 /********************
  * Helper functions *
  ********************/
@@ -679,9 +682,7 @@ static void wm_update_cols(dpy_t *dpy)
 	}
 }
 
-/*******************************
- * Window management functions *
- *******************************/
+/* Refresh the window layout */
 void wm_update(void)
 {
 	/* Updates window sizes */
@@ -708,6 +709,9 @@ void wm_update(void)
 		set_focus(wm_focus);
 }
 
+/*******************************
+ * Window management functions *
+ *******************************/
 int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 {
 	if (!win || win == wm_dpy->geom) return 0;
@@ -885,6 +889,10 @@ void wm_insert(win_t *win)
 	printf("wm_insert: %p\n", win);
 	print_txt();
 
+	/* Check for toolbars */
+	if (win->type == TYPE_TOOLBAR)
+		return wm_update();
+
 	/* Initialize window */
 	win->wm = new0(win_wm_t);
 	sys_watch(win, EV_ENTER, MOD());
@@ -905,6 +913,8 @@ void wm_remove(win_t *win)
 {
 	printf("wm_remove: %p\n", win);
 	print_txt();
+	if (win->type == TYPE_TOOLBAR)
+		return wm_update();
 	for (list_t *tag = wm->tags; tag; tag = tag->next)
 		cut_win(win, tag->data);
 	free(win->wm);

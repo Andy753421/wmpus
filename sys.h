@@ -39,6 +39,7 @@ typedef enum {
 typedef enum {
 	TYPE_NORMAL,
 	TYPE_DIALOG,
+	TYPE_TOOLBAR,
 } type_t;
 
 /* Basic window type */
