@@ -246,16 +246,17 @@ static win_t *win_new(Display *dpy, Window xid)
 			win->parent = win_find(dpy, trans, 0);
 
 		XSelectInput(dpy, xid, PropertyChangeMask);
-
-		wm_insert(win);
 	}
 
-	printf("win_new: %p = %p, %d (%d,%d %dx%d) - %s\n",
-			win, dpy, (int)xid,
+	printf("win_new: win=%p x11=(%p,%d) state=%x pos=(%d,%d %dx%d) type=%s\n",
+			win, dpy, (int)xid, win->state,
 			win->x, win->y, win->w, win->h,
-			win->type == TYPE_NORMAL  ? "normal" :
-			win->type == TYPE_DIALOG  ? "dialog" :
-			win->type == TYPE_TOOLBAR ? "normal" : "unknown");
+			win->type == TYPE_NORMAL  ? "normal"  :
+			win->type == TYPE_DIALOG  ? "dialog"  :
+			win->type == TYPE_TOOLBAR ? "toolbar" : "unknown");
+
+	if (root)
+		wm_insert(win);
 
 	return win;
 }
@@ -382,7 +383,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	if (type == KeyPress) {
 		while (XCheckTypedEvent(dpy, KeyPress, xe));
 		KeySym sym = XLookupKeysym(&xe->xkey, 0);
-		printf("got xe %c %hhx\n", xk2ev(sym), mod2int(mod));
+		//printf("got xe %c %hhx\n", xk2ev(sym), mod2int(mod));
 		wm_handle_event(win, xk2ev(sym), mod, ptr);
 	}
 	else if (type == KeyRelease) {
@@ -428,6 +429,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 	else if (type == UnmapNotify) {
 		if ((win = win_find(dpy,xe->xunmap.window,0)) &&
 		     win->state != ST_HIDE) {
+			printf("unmap: %lx\n", xe->xunmap.window);
 			wm_handle_state(win, win->state, ST_HIDE);
 			win->state = ST_HIDE;
 		}
@@ -478,6 +480,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 			state_t next = (cme->data.l[0] == 1 || /* _NET_WM_STATE_ADD    */
 			               (cme->data.l[0] == 2 && /* _NET_WM_STATE_TOGGLE */
 			                win->state != ST_FULL)) ? ST_FULL : ST_SHOW;
+			printf("client_msg: fullscreen %x -> %x", win->state, next);
 			wm_handle_state(win, win->state, next);
 			sys_show(win, next);
 		}
@@ -544,7 +547,7 @@ void sys_raise(win_t *win)
 
 void sys_focus(win_t *win)
 {
-	printf("sys_focus: %p\n", win);
+	//printf("sys_focus: %p\n", win);
 
 	/* Set actual focus */
 	XSetInputFocus(win->sys->dpy, win->sys->xid,

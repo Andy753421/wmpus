@@ -277,7 +277,7 @@ static void print_txt(void)
 	for (list_t *lrow = col->rows; lrow; lrow = lrow->next) {
 		row_t *row = lrow->data;
 		win_t *win = row->win;
-		printf("      win: <%-9p [%p>>%p] >%-9p focus=%d%d    - %4dpx \n",
+		printf("      row: <%-9p [%p>>%p] >%-9p focus=%d%d    - %4dpx \n",
 				lrow->prev, lrow, win, lrow->next,
 				col->row == row, wm_focus == win, win->h);
 	} }
@@ -872,6 +872,7 @@ int wm_handle_state(win_t *win, state_t prev, state_t next)
 	row_t *row = NULL;
 	flt_t *flt = NULL;
 
+	printf("wm_handle_state - %p %x -> %x\n", win, prev, next);
 	search(wm_tag, win, NULL, NULL, &row, &flt);
 
 	if (row) row->state = next;
