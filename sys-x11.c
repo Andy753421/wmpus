@@ -463,8 +463,10 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		printf("map_req: %lx\n", xe->xmaprequest.window);
 		win = win_find(dpy,xe->xmaprequest.window,1);
 		// fixme, for hide -> max, etc
-		if (win->state == ST_HIDE)
+		if (win->state == ST_HIDE) {
+			wm_handle_state(win, win->state, ST_SHOW);
 			win->state = ST_SHOW;
+		}
 		sys_show(win, win->state);
 	}
 	else if (type == ClientMessage) {
