@@ -593,6 +593,13 @@ void sys_show(win_t *win, state_t state)
 		}
 		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, 0);
 		XMapWindow(win->sys->dpy, win->sys->xid);
+		XConfigureWindow(win->sys->dpy, win->sys->xid,
+			CWX|CWY|CWWidth|CWHeight, &(XWindowChanges) {
+				.x      = win->x,
+				.y      = win->y,
+				.width  = win->w,
+				.height = win->h,
+		});
 		XMoveResizeWindow(win->sys->dpy, win->sys->xid,
 			screen->x - screen->sys->strut.left,
 			screen->y - screen->sys->strut.top,
