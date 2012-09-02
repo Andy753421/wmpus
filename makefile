@@ -17,7 +17,7 @@ LDFLAGS   += -lX11 -lXinerama
 endif
 
 ifeq ($(SYS),win32)
-GCC       ?= i686-pc-mingw32-gcc
+GCC       ?= i486-mingw32-gcc
 PROG      ?= wmpus.exe
 LDFLAGS   += -lgdi32
 endif
