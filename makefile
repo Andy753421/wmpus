@@ -3,7 +3,7 @@
 
 -include config.mk
 
-VERSION   ?= 0.1-p0
+VERSION   ?= 0.1-rc1
 WM        ?= wmii
 SYS       ?= x11
 CFLAGS    ?= -g -Wall
