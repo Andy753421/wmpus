@@ -325,7 +325,7 @@ static int win_msg(win_t *win, atom_t msg)
 		return 0;
 
 	XSendEvent(win->sys->dpy, win->sys->xid, False, NoEventMask, &(XEvent){
-		.type                 = ClientMessage,
+		.xclient.type         = ClientMessage,
 		.xclient.window       = win->sys->xid,
 		.xclient.message_type = atoms[WM_PROTO],
 		.xclient.format       = 32,
@@ -554,7 +554,7 @@ void sys_focus(win_t *win)
 	/* Set actual focus */
 	XSetInputFocus(win->sys->dpy, win->sys->xid,
 			RevertToPointerRoot, CurrentTime);
-	win_msg(win, WM_FOCUS);
+	//win_msg(win, WM_FOCUS);
 
 	/* Set border on focused window */
 	static win_t *last = NULL;
@@ -629,7 +629,6 @@ void sys_show(win_t *win, state_t state)
 			XSetErrorHandler(xerror);
 			XUngrabServer(win->sys->dpy);
 		}
-		XDestroyWindow(win->sys->dpy, win->sys->xid);
 		break;
 	}
 	win->state = state;
