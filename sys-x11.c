@@ -69,6 +69,17 @@ static unsigned long colors[NCOLORS];
 static list_t *screens;
 static list_t *struts;
 
+/* Debug functions */
+static char *state_map[] = {
+	[ST_HIDE ] "hide ",
+	[ST_SHOW ] "show ",
+	[ST_FULL ] "full ",
+	[ST_MAX  ] "max  ",
+	[ST_SHADE] "shade",
+	[ST_ICON ] "icon ",
+	[ST_CLOSE] "close",
+};
+
 /* Conversion functions */
 static event_map_t ev2sym[] = {
 	{EV_LEFT    , XK_Left },
@@ -482,7 +493,6 @@ static void process_event(int type, XEvent *xe, win_t *root)
 			state_t next = (cme->data.l[0] == 1 || /* _NET_WM_STATE_ADD    */
 			               (cme->data.l[0] == 2 && /* _NET_WM_STATE_TOGGLE */
 			                win->state != ST_FULL)) ? ST_FULL : ST_SHOW;
-			printf("client_msg: fullscreen %x -> %x", win->state, next);
 			wm_handle_state(win, win->state, next);
 			sys_show(win, next);
 		}
@@ -528,6 +538,8 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	win->x = x; win->y = y;
 	win->w = MAX(w,1+b); win->h = MAX(h,1+b);
 	w      = MAX(w-b,1); h      = MAX(h-b,1);
+	XConfigureWindow(win->sys->dpy, win->sys->xid, CWX|CWY|CWWidth|CWHeight,
+		&(XWindowChanges) { .x=x, .y=y, .width=w, .height=h });
 	XMoveResizeWindow(win->sys->dpy, win->sys->xid, x, y, w, h);
 
 	/* Flush events, so moving window doesn't cause re-focus
@@ -567,59 +579,69 @@ void sys_focus(win_t *win)
 
 void sys_show(win_t *win, state_t state)
 {
-	switch (state) {
-	case ST_HIDE:
-		printf("sys_show: hide %p\n", win);
-		XUnmapWindow(win->sys->dpy, win->sys->xid);
-		break;
-	case ST_SHOW:
-		printf("sys_show: show %p\n", win);
-		if (win->state == ST_FULL)
-			sys_move(win, win->x, win->y, win->w, win->h);
-		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
-		XMapWindow(win->sys->dpy, win->sys->xid);
-		XSync(win->sys->dpy, False);
-		break;
-	case ST_MAX:
-		printf("sys_show: max %p\n", win);
-		XMapWindow(win->sys->dpy, win->sys->xid);
-		break;
-	case ST_FULL:
-		printf("sys_show: full %p\n", win);
-		win_t *screen = NULL;
+	//if (win->state == state)
+	//	return;
+
+	/* Debug */
+	printf("sys_show: %p: %s -> %s\n", win,
+			state_map[win->state], state_map[state]);
+
+	/* Find screen */
+	win_t *screen = NULL;
+	if (state == ST_FULL || state == ST_MAX) {
 		for (list_t *cur = screens; cur; cur = cur->next) {
 			screen = cur->data;
 			if (win->x >= screen->x && win->x <= screen->x+screen->w &&
 			    win->y >= screen->y && win->y <= screen->y+screen->h)
 				break;
 		}
+	}
+
+	/* Update properties */
+	if (state == ST_FULL)
+		XChangeProperty(win->sys->dpy, win->sys->xid, atoms[NET_STATE], XA_ATOM, 32,
+		                PropModeReplace, (unsigned char*)&atoms[NET_FULL], 1);
+	else if (state != ST_FULL)
+		XChangeProperty(win->sys->dpy, win->sys->xid, atoms[NET_STATE], XA_ATOM, 32,
+				PropModeReplace, (unsigned char*)0, 0);
+
+	/* Update border */
+	if (state == ST_SHOW || state == ST_MAX || state == ST_SHADE)
+		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
+	else if (state == ST_FULL)
 		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, 0);
+
+	/* Map/Unmap window */
+	if (state == ST_SHOW || state == ST_FULL || state == ST_MAX || state == ST_SHADE)
 		XMapWindow(win->sys->dpy, win->sys->xid);
-		XConfigureWindow(win->sys->dpy, win->sys->xid,
-			CWX|CWY|CWWidth|CWHeight, &(XWindowChanges) {
-				.x      = win->x,
-				.y      = win->y,
-				.width  = win->w,
-				.height = win->h,
-		});
-		XMoveResizeWindow(win->sys->dpy, win->sys->xid,
-			screen->x - screen->sys->strut.left,
-			screen->y - screen->sys->strut.top,
-			screen->w + screen->sys->strut.left + screen->sys->strut.right,
-			screen->h + screen->sys->strut.top  + screen->sys->strut.bottom);
-		XRaiseWindow(win->sys->dpy, win->sys->xid);
-		break;
-	case ST_SHADE:
-		printf("sys_show: shade %p\n", win);
+	else if (state == ST_HIDE)
+		XUnmapWindow(win->sys->dpy, win->sys->xid);
+
+	/* Resize windows */
+	if (state == ST_SHOW) {
+		sys_move(win, win->x, win->y, win->w, win->h);
+	} else if (state == ST_MAX) {
+		sys_move(win, screen->x, screen->y, screen->w, screen->h);
+	} else if (state == ST_FULL) {
+		XWindowChanges wc = {
+			.x      = screen->x - screen->sys->strut.left ,
+			.y      = screen->y - screen->sys->strut.top ,
+			.width  = screen->w + screen->sys->strut.left + screen->sys->strut.right,
+			.height = screen->h + screen->sys->strut.top  + screen->sys->strut.bottom
+		};
+		XConfigureWindow(win->sys->dpy, win->sys->xid, CWX|CWY|CWWidth|CWHeight, &wc);
+		XMoveResizeWindow(win->sys->dpy, win->sys->xid, wc.x, wc.y, wc.width, wc.height);
+	} else if (state == ST_SHADE) {
 		XConfigureWindow(win->sys->dpy, win->sys->xid, CWHeight,
-				&(XWindowChanges){ .height = stack });
-		XMapWindow(win->sys->dpy, win->sys->xid);
-		break;
-	case ST_ICON:
-		printf("sys_show: icon %p\n", win);
-		break;
-	case ST_CLOSE:
-		printf("sys_show: close %p\n", win);
+			&(XWindowChanges) { .height = stack });
+	}
+
+	/* Raise window */
+	if (state == ST_FULL || state == ST_MAX)
+		XRaiseWindow(win->sys->dpy, win->sys->xid);
+
+	/* Close windows */
+	if (state == ST_CLOSE) {
 		if (!win_msg(win, WM_DELETE)) {
 			XGrabServer(win->sys->dpy);
 			XSetErrorHandler(xnoerror);
@@ -629,8 +651,9 @@ void sys_show(win_t *win, state_t state)
 			XSetErrorHandler(xerror);
 			XUngrabServer(win->sys->dpy);
 		}
-		break;
 	}
+
+	/* Update state */
 	win->state = state;
 }
 
