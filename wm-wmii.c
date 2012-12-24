@@ -875,7 +875,13 @@ int wm_handle_state(win_t *win, state_t prev, state_t next)
 	flt_t *flt = NULL;
 
 	printf("wm_handle_state - %p %x -> %x\n", win, prev, next);
+
 	search(wm_tag, win, NULL, NULL, &row, &flt);
+
+	if (!row && !flt && next == ST_SHOW)
+		return wm_insert(win), 1;
+	if ((row || flt) && next == ST_HIDE)
+		return wm_remove(win), 1;
 
 	if (row) row->state = next;
 	if (flt) flt->state = next;
@@ -897,7 +903,6 @@ void wm_insert(win_t *win)
 		return wm_update();
 
 	/* Initialize window */
-	win->wm = new0(win_wm_t);
 	sys_watch(win, EV_ENTER, MOD());
 	sys_watch(win, EV_FOCUS, MOD());
 
@@ -920,7 +925,6 @@ void wm_remove(win_t *win)
 		return wm_update();
 	for (list_t *tag = wm->tags; tag; tag = tag->next)
 		cut_win(win, tag->data);
-	free(win->wm);
 	set_focus(wm_focus);
 	wm_update();
 	print_txt();
@@ -965,12 +969,10 @@ void wm_free(win_t *root)
 	while (dpy->cols) { col_t *col = dpy->cols->data;
 	while (col->rows) { row_t *row = col->rows->data;
 		sys_show(row->win, ST_SHOW);
-		free(row->win->wm);
 	col->rows = list_remove(col->rows, col->rows, 1); }
 	dpy->cols = list_remove(dpy->cols, dpy->cols, 1); }
 	while (dpy->flts) { flt_t *flt = dpy->flts->data;
 		sys_show(flt->win, ST_SHOW);
-		free(flt->win->wm);
 	dpy->flts = list_remove(dpy->flts, dpy->flts, 1); }
 	tag->dpys = list_remove(tag->dpys, tag->dpys, 1); }
 	 wm->tags = list_remove( wm->tags,  wm->tags, 1); }

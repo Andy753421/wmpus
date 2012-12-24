@@ -455,7 +455,7 @@ static void process_event(int type, XEvent *xe, win_t *root)
 		printf("configure_req: %lx - (0x%lx) %dx%d @ %d,%d\n",
 				cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
-		if ((win = win_find(dpy,xe->xconfigurerequest.window,1))) {
+		if ((win = win_find(dpy,cre->window,1))) {
 			XSendEvent(dpy, cre->window, False, StructureNotifyMask, &(XEvent){
 				.xconfigure.type              = ConfigureNotify,
 				.xconfigure.display           = win->sys->dpy,
@@ -629,6 +629,8 @@ void sys_show(win_t *win, state_t state)
 			.width  = screen->w + screen->sys->strut.left + screen->sys->strut.right,
 			.height = screen->h + screen->sys->strut.top  + screen->sys->strut.bottom
 		};
+		win->x = wc.x;     win->y = wc.y;
+		win->w = wc.width; win->h = wc.height;
 		XConfigureWindow(win->sys->dpy, win->sys->xid, CWX|CWY|CWWidth|CWHeight, &wc);
 		XMoveResizeWindow(win->sys->dpy, win->sys->xid, wc.x, wc.y, wc.width, wc.height);
 	} else if (state == ST_SHADE) {
