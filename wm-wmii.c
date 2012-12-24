@@ -756,6 +756,8 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 		if (ev == 'q')   return sys_exit(),     1;
 		if (ev == 'f')   return wm_handle_state(win, win->state,
 			win->state == ST_FULL ? ST_SHOW : ST_FULL);
+		if (ev == 'g')   return wm_handle_state(win, win->state,
+			win->state == ST_MAX  ? ST_SHOW : ST_MAX);
 	}
 	if (mod.MODKEY && mod.shift) {
 		if (ev == 'c')   return sys_show(win, ST_CLOSE), 1;
@@ -942,7 +944,7 @@ void wm_init(win_t *root)
 	event_t ev_s[] = {'h', 'j', 'k', 'l', 'c', 'q', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 		EV_MOUSE1, EV_MOUSE3};
-	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', 'f', ' ',
+	event_t ev_m[] = {'h', 'j', 'k', 'l', 'd', 's', 'm', 't', 'f', 'g', ' ',
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 		EV_F1, EV_F2, EV_F3, EV_F4,  EV_F5,  EV_F6,
 		EV_F7, EV_F8, EV_F9, EV_F10, EV_F11, EV_F12,
