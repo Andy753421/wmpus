@@ -699,9 +699,9 @@ void wm_update(void)
 	for (list_t *tag = wm ->tags; tag; tag = tag->next)
 		if (tag->data != wm_tag) {
 			tag_foreach_col(TAG(tag), dpy, col, row, win)
-					sys_show(win, ST_HIDE);
+				sys_show(win, ST_HIDE);
 			tag_foreach_flt(TAG(tag), dpy, flt, win)
-					sys_show(win, ST_HIDE);
+				sys_show(win, ST_HIDE);
 		}
 
 	/* Set focused window */
@@ -714,7 +714,8 @@ void wm_update(void)
  *******************************/
 int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 {
-	if (!win || win == wm_dpy->geom) return 0;
+	if (!win || win == wm_dpy->geom)
+		return 0;
 	//printf("wm_handle_event: %p - %x %c%c%c%c%c\n", win, ev,
 	//	mod.up    ? '^' : 'v',
 	//	mod.alt   ? 'a' : '-',
@@ -740,7 +741,7 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 
 	/* Only handle key-down */
 	if (mod.up)
-		return 0;
+		return mod.MODKEY || ev == EV_ALT;
 
 	/* Misc */
 	if (mod.MODKEY) {
@@ -822,7 +823,7 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 	if (ev == EV_FOCUS)
 		sys_focus(wm_focus ?: wm->root);
 
-	return 0;
+	return mod.MODKEY;
 }
 
 int wm_handle_ptr(win_t *cwin, ptr_t ptr)
@@ -880,7 +881,7 @@ int wm_handle_state(win_t *win, state_t prev, state_t next)
 
 	if (!row && !flt && next == ST_SHOW)
 		return wm_insert(win), 1;
-	if ((row || flt) && next == ST_HIDE)
+	if ((row || flt) && (next == ST_HIDE || next == ST_ICON))
 		return wm_remove(win), 1;
 
 	if (row) row->state = next;
