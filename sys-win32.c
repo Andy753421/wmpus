@@ -123,14 +123,19 @@ static ptr_t getptr(void)
 /* Window functions */
 static win_t *win_new(HWND hwnd, int checkwin)
 {
+	WINDOWINFO info = { .cbSize = sizeof(info) };
+
 	if (checkwin) {
 		char winclass[256];
-		int exstyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+		GetWindowInfo(hwnd, &info);
 		GetClassName(hwnd, winclass, sizeof(winclass));
-		if (!IsWindowVisible(hwnd))      return NULL; // Invisible stuff..
-		if (!strcmp("#32770", winclass)) return NULL; // Message boxes
-		if (GetWindow(hwnd, GW_OWNER))   return NULL; // Dialog boxes, etc
-		if (exstyle & WS_EX_TOOLWINDOW)  return NULL; // Floating toolbars
+		printf("skip?");
+		if (!IsWindowVisible(hwnd))
+			return NULL; // Invisible stuff..
+		if (!strcmp("#32770", winclass))
+			return NULL; // Message boxes
+		if (info.dwExStyle & WS_EX_TOOLWINDOW)
+			return NULL; // Floating toolbars
 	}
 
 	RECT rect = {};
@@ -142,6 +147,14 @@ static win_t *win_new(HWND hwnd, int checkwin)
 	win->h         = rect.bottom - rect.top;
 	win->sys       = new0(win_sys_t);
 	win->sys->hwnd = hwnd;
+
+	if (checkwin) {
+		if (info.dwStyle & WS_POPUP)
+			win->type = TYPE_DIALOG;
+		if (!(info.dwStyle & WS_MINIMIZEBOX))
+			win->type = TYPE_DIALOG;
+	}
+
 	printf("win_new: %p = %p (%d,%d %dx%d)\n", win, hwnd,
 			win->x, win->y, win->w, win->h);
 	return win;
@@ -172,6 +185,7 @@ static win_t *win_find(HWND hwnd, int create)
 
 static void win_remove(win_t *win)
 {
+	wm_remove(win);
 	tdelete(win, &cache, win_cmp);
 	free(win->sys);
 	free(win);
@@ -196,12 +210,15 @@ LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 	event_t ev = w2ev(st->vkCode);
 	mod_t mod = getmod();
 	mod.up = !!(st->flags & 0x80);
-	printf("KbdProc: %d,%x,%lx - %lx,%lx,%lx - %x,%x\n",
+	printf("KbdProc: %d,%x,%lx - %lx,%lx,%lx - %x,%02x\n",
 			msg, wParam, lParam,
 			st->vkCode, st->scanCode, st->flags,
 			ev, mod2int(mod));
-	return wm_handle_event(win_focused(), ev, mod, getptr())
-		|| CallNextHookEx(0, msg, wParam, lParam);
+	if (wm_handle_event(win_focused(), ev, mod, getptr())) {
+		printf("handled\n");
+		return 1;
+	}
+	return CallNextHookEx(0, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK MllProc(int msg, WPARAM wParam, LPARAM lParam)
@@ -253,17 +270,22 @@ LRESULT CALLBACK ShlProc(int msg, WPARAM wParam, LPARAM lParam)
 		printf("ShlProc: %p - %s\n", hwnd, msg == HSHELL_WINDOWREPLACED ?
 				"window replaced" : "window destroyed");
 		if ((win = win_find(hwnd,0)) &&
-		    (win->state == ST_SHOW ||
-		     win->state == ST_SHADE)) {
-			wm_remove(win);
+		    (win->state != ST_HIDE))
 			win_remove(win);
-		}
 		return 1;
 	case HSHELL_WINDOWACTIVATED:
 		printf("ShlProc: %p - window activated\n", hwnd);
-		// Fake button-click (causes crazy switching)
-		//if ((win = win_find(hwnd,0)))
-		//	wm_handle_event(win, EV_MOUSE1, MOD(), getptr());
+		if ((win = win_find(hwnd,0))) {
+			wm_handle_state(win, win->state, ST_SHOW);
+			win->state = ST_SHOW;
+			// Fake button-click (causes crazy switching)
+			// wm_handle_event(win, EV_MOUSE1, MOD(), getptr());
+		}
+		return 0;
+	case HSHELL_GETMINRECT:
+		printf("ShlProc: %p - window minimize\n", hwnd);
+		wm_handle_state(win, win->state, ST_ICON);
+		win->state = ST_ICON;
 		return 0;
 	default:
 		printf("ShlProc: %p - unknown msg, %d\n", hwnd, msg);
@@ -328,6 +350,7 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	win->x = x; win->y = y;
 	win->w = MAX(w,1); win->h = MAX(h,1);
 	MoveWindow(win->sys->hwnd, win->x, win->y, win->w, win->h, TRUE);
+	SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,win->h), TRUE);
 }
 
 void sys_raise(win_t *win)
@@ -374,19 +397,36 @@ void sys_show(win_t *win, state_t state)
 		char *str;
 		int   cmd;
 	} map[] = {
-		[ST_SHOW ] {"show" , SW_SHOW    },
-		[ST_FULL ] {"full" , SW_MAXIMIZE},
-		[ST_SHADE] {"shade", SW_SHOW    },
-		[ST_ICON ] {"icon" , SW_MINIMIZE},
-		[ST_HIDE ] {"hide" , SW_HIDE    },
+		[ST_HIDE ] {"hide ", SW_HIDE          },
+		[ST_SHOW ] {"show ", SW_SHOWNOACTIVATE},
+		[ST_FULL ] {"full ", SW_MAXIMIZE      }, // TODO
+		[ST_MAX  ] {"max  ", SW_MAXIMIZE      },
+		[ST_SHADE] {"shade", SW_SHOWNOACTIVATE}, // TODO
+		[ST_ICON ] {"icon ", SW_MINIMIZE      },
+		[ST_CLOSE] {"close", SW_HIDE          },
 	};
-	if (win->state != state && win->state == ST_SHADE)
-		SetWindowRgn(win->sys->hwnd, NULL, TRUE);
-	win->state = state;
-	printf("sys_show: %s\n", map[state].str);
-	ShowWindow(win->sys->hwnd, map[state].cmd);
+
+	printf("sys_show: %p: %s -> %s\n", win,
+			map[win->state].str, map[state].str);
+
+	/* Show window */
+	if ((win->state == ST_MAX || win->state == ST_ICON) && state == ST_SHOW)
+		ShowWindowAsync(win->sys->hwnd, SW_RESTORE);
+	else
+		ShowWindowAsync(win->sys->hwnd, map[state].cmd);
+
+	/* Set/reset clipping */
 	if (state == ST_SHADE)
-		SetWindowRgn(win->sys->hwnd, CreateRectRgn(0,0,win->w,stack), TRUE);
+		SetWindowRgn(win->sys->hwnd, CreateRectRgn(3,3,win->w-3,22), TRUE);
+	else if (state != win->state && state != ST_CLOSE)
+		SetWindowRgn(win->sys->hwnd, NULL, TRUE);
+
+	/* Update window state (used by ShlProc) */
+	win->state = state;
+
+	/* Close the window */
+	if (state == ST_CLOSE)
+		SendMessage(win->sys->hwnd, WM_CLOSE, 0, 0);
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
