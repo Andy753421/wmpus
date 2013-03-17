@@ -1,0 +1,8 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=wmpus
+Comment=a cross platform window manager
+Exec=/etc/X11/Sessions/wmpus
+TryExec=wmpus
+Icon=
+Type=Application

@@ -32,8 +32,11 @@ dist:
 		README LICENSE config.mk.example makefile *.1 *.c *.h
 
 install: all
+	sed -i 's:/usr.*:$(PREFIX)/bin/wmpus:' wmpus.session
 	install -m 755 -D $(PROG) $(DESTDIR)$(PREFIX)/bin/$(PROG)
 	install -m 644 -D wmpus.1 $(DESTDIR)$(MANPREFIX)/man1/wmpus.1
+	install -m 755 -D wmpus.session $(DESTDIR)/etc/X11/Sessions/wmpus
+	install -m 644 -D wmpus.desktop $(DESTDIR)$(PREFIX)/share/xsessions/wmpus.desktop
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(PROG)
