@@ -61,6 +61,7 @@ typedef enum {
 
 /* Global data */
 static win_t *root;
+static win_t *last;
 static int   running;
 static void *cache;
 static Atom atoms[NATOMS];
@@ -299,6 +300,8 @@ static win_t *win_find(Display *dpy, Window xid, int create)
 
 static void win_free(win_t *win)
 {
+	if (win == last)
+		last = NULL;
 	free(win->sys);
 	free(win);
 }
@@ -569,7 +572,6 @@ void sys_focus(win_t *win)
 	//win_msg(win, WM_FOCUS);
 
 	/* Set border on focused window */
-	static win_t *last = NULL;
 	if (last)
 		XSetWindowBorder(last->sys->dpy, last->sys->xid, colors[CLR_UNFOCUS]);
 	XSync(win->sys->dpy, False);
