@@ -22,6 +22,12 @@ PROG      ?= wmpus
 LDFLAGS   += -lX11 -lXinerama
 endif
 
+ifeq ($(SYS),swc)
+GCC       ?= gcc
+PROG      ?= wmpus
+LDFLAGS   += -lswc -lwayland-client -lwayland-server
+endif
+
 ifeq ($(SYS),win32)
 GCC       ?= mingw32-gcc
 PROG      ?= wmpus.exe
