@@ -31,8 +31,8 @@
 /* Internal structures */
 struct win_sys {
 	win_t              *win;
-	struct swc_window  *swc;
-	struct wl_listener  evt;
+	struct swc_screen  *ss;
+	struct swc_window  *sw;
 };
 
 /* Global data */
@@ -42,7 +42,7 @@ static struct wl_event_loop *events;
 /*******************
  * Debug functions *
  *******************/
-static const char * cmd_term[] = { "st-wl", NULL };
+static const char * cmd_term[] = { "st-wl",        NULL };
 static const char * cmd_menu[] = { "dmenu_run-wl", NULL };
 
 static void cmd_exit(void *data, uint32_t time, uint32_t value, uint32_t state)
@@ -51,7 +51,7 @@ static void cmd_exit(void *data, uint32_t time, uint32_t value, uint32_t state)
 		return;
 
 	printf("cmd_exit\n");
-	exit(0);
+	sys_exit();
 }
 
 static void cmd_spawn(void *data, uint32_t time, uint32_t value, uint32_t state)
@@ -62,6 +62,7 @@ static void cmd_spawn(void *data, uint32_t time, uint32_t value, uint32_t state)
 
 	printf("cmd_spawn: %s\n", cmd[0]);
 	if (fork() == 0) {
+		close(2);
 		execvp(cmd[0], cmd);
 		exit(0);
 	}
@@ -71,72 +72,99 @@ static void cmd_spawn(void *data, uint32_t time, uint32_t value, uint32_t state)
  * Callbacks *
  *************/
 
-#define listener2win(listener) \
-	(((win_sys_t*)((size_t)listener - \
-	       (size_t)(&((win_sys_t*)NULL)->evt)))->win)
-
-static const char *map_window[] = {
-	[SWC_WINDOW_DESTROYED]                = "destroyed",
-	[SWC_WINDOW_TITLE_CHANGED]            = "title_changed",
-	[SWC_WINDOW_CLASS_CHANGED]            = "class_changed",
-	[SWC_WINDOW_STATE_CHANGED]            = "state_changed",
-	[SWC_WINDOW_ENTERED]                  = "entered",
-	[SWC_WINDOW_RESIZED]                  = "resized",
-	[SWC_WINDOW_PARENT_CHANGED]           = "parent_changed",
-};
-
-static const char *map_screen[] = {
-	[SWC_SCREEN_DESTROYED]                = "destroyed",
-	[SWC_SCREEN_GEOMETRY_CHANGED]         = "geometry_changed",
-	[SWC_SCREEN_USABLE_GEOMETRY_CHANGED]  = "usable_geometry_changed",
-};
-
-static void evt_window(struct wl_listener *listener, void *_event)
+/* Screen callbacks */
+static void screen_entered(void *data)
 {
-	struct swc_event *event = _event;
-	win_t *win = listener2win(listener);
-
-	printf("evt_window: %p -> %p - %s\n", listener, win,
-			map_window[event->type]);
-
-	switch (event->type) {
-		case SWC_WINDOW_STATE_CHANGED:
-			if (win->sys->swc->state == SWC_WINDOW_STATE_NORMAL) {
-				swc_window_show(win->sys->swc);
-				swc_window_focus(win->sys->swc);
-			}
-			break;
-	}
+	printf("screen_entered: %p\n", data);
 }
 
-static void evt_screen(struct wl_listener *listener, void *_event)
+static void screen_geometry(void *data)
 {
-	struct swc_event *event = _event;
-	printf("evt_screen: %p - %s\n", listener,
-			map_screen[event->type]);
+	printf("screen_geometry: %p\n", data);
 }
 
-static void new_window(struct swc_window *swc)
+static void screen_usable(void *data)
 {
-	printf("new_window: %p\n", swc);
+	printf("screen_usable: %p\n", data);
+}
+
+static void screen_destroy(void *data)
+{
+	printf("screen_destroy: %p\n", data);
+}
+
+static const struct swc_screen_handler screen_handler = {
+	.entered                 = &screen_entered,
+	.geometry_changed        = &screen_geometry,
+	.usable_geometry_changed = &screen_usable,
+	.destroy                 = &screen_destroy,
+};
+
+/* Window callbacks */
+static void window_entered(void *_win)
+{
+	win_t *win = _win;
+	printf("window_entered: %p\n", win);
+	swc_window_show(win->sys->sw);
+	swc_window_focus(win->sys->sw);
+}
+
+static void window_title(void *_win)
+{
+	win_t *win = _win;
+	printf("window_title: %p\n", win);
+}
+
+static void window_class(void *_win)
+{
+	win_t *win = _win;
+	printf("window_class: %p\n", win);
+}
+
+static void window_parent(void *_win)
+{
+	win_t *win = _win;
+	printf("window_parent: %p\n", win);
+}
+
+static void window_destroy(void *_win)
+{
+	win_t *win = _win;
+	printf("window_destroy: %p\n", win);
+}
+
+static const struct swc_window_handler window_handler = {
+	.entered        = &window_entered,
+	.title_changed  = &window_title,
+	.class_changed  = &window_class,
+	.parent_changed = &window_parent,
+	.destroy        = &window_destroy,
+};
+
+/* System callbacks */
+static void new_screen(struct swc_screen *ss)
+{
+	printf("new_screen: %p\n", ss);
 
 	win_t *win = new0(win_t);
 	win->sys   = new0(win_sys_t);
 	win->sys->win = win;
-	win->sys->swc = swc;
-	win->sys->evt.notify = evt_window;
+	win->sys->ss  = ss;
 
-	wl_signal_add(&win->sys->swc->event_signal, &win->sys->evt);
+	swc_screen_set_handler(ss, &screen_handler, win);
 }
 
-static void new_screen(struct swc_screen *screen)
+static void new_window(struct swc_window *sw)
 {
-	printf("new_screen: %p\n", screen);
+	printf("new_window: %p\n", sw);
 
-	struct wl_listener *listener = new0(struct wl_listener);
-	listener->notify = evt_screen;
+	win_t *win = new0(win_t);
+	win->sys   = new0(win_sys_t);
+	win->sys->win = win;
+	win->sys->sw  = sw;
 
-	wl_signal_add(&screen->event_signal, listener);
+	swc_window_set_handler(sw, &window_handler, win);
+	swc_window_set_tiled(NULL);
 }
 
 /********************
@@ -184,8 +212,8 @@ list_t *sys_info(win_t *win)
 win_t *sys_init(void)
 {
 	static struct swc_manager manager = {
-		&new_window,
-		&new_screen,
+		.new_screen = &new_screen,
+		.new_window = &new_window,
 	};
 
 	printf("sys_init\n");
@@ -204,9 +232,12 @@ win_t *sys_init(void)
 		error("Unable to get event loop");
 
 	/* Fail-safe key bindings */
-	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO|SWC_MOD_SHIFT, XKB_KEY_q, &cmd_exit,  NULL);
-	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO, XKB_KEY_Return, &cmd_spawn, cmd_term);
-	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO, XKB_KEY_r,      &cmd_spawn, cmd_menu);
+	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO|SWC_MOD_SHIFT, XKB_KEY_q,
+			&cmd_exit,  NULL);
+	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO, XKB_KEY_Return,
+			&cmd_spawn, cmd_term);
+	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO, XKB_KEY_r,
+			&cmd_spawn, cmd_menu);
 
 	return new0(win_t);
 }
@@ -215,12 +246,13 @@ void sys_run(win_t *root)
 {
 	printf("sys_run: %p\n", root);
 	wl_display_run(display);
+	wl_display_destroy(display);
 }
 
 void sys_exit(void)
 {
 	printf("sys_exit\n");
-	exit(0);
+	wl_display_terminate(display);
 }
 
 void sys_free(win_t *root)
