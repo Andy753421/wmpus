@@ -36,10 +36,12 @@ typedef struct {
 	};
 } entry_t;
 
-/* Data */
+/* Global Data */
+int    conf_argc;
+char **conf_argv;
+
+/* Local Data */
 static void  *conf;
-static int    conf_argc;
-static char **conf_argv;
 static char   conf_path[256];
 
 /* Helpers */

@@ -27,8 +27,8 @@ GCC       ?= gcc
 PROG      ?= wmpus
 LDFLAGS   += -lwayland-client -lwayland-server
 
-sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-2.0)
-wmpus:     LDFLAGS += $(shell pkg-config --libs gtk+-2.0)
+sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-3.0)
+wmpus:     LDFLAGS += $(shell pkg-config --libs   gtk+-3.0)
 endif
 
 ifeq ($(SYS),wl)

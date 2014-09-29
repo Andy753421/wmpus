@@ -13,6 +13,11 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  */
 
+/* Global data */
+extern int    conf_argc;
+extern char **conf_argv;
+
+/* Functions */
 int conf_get_int(const char *key, int def);
 
 const char *conf_get_str(const char *key, const char *def);
