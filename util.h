@@ -16,8 +16,10 @@
 /* Various utility functions */
 
 /* Misc macros */
+#if !defined(MAX) && !defined(MIN)
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
+#endif
 
 #define new0(type) (calloc(1, sizeof(type)))
 

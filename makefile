@@ -22,6 +22,15 @@ PROG      ?= wmpus
 LDFLAGS   += -lX11 -lXinerama
 endif
 
+ifeq ($(SYS),xwl)
+GCC       ?= gcc
+PROG      ?= wmpus
+LDFLAGS   += -lwayland-client -lwayland-server
+
+sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-2.0)
+wmpus:     LDFLAGS += $(shell pkg-config --libs gtk+-2.0)
+endif
+
 ifeq ($(SYS),wl)
 GCC       ?= gcc
 PROG      ?= wmpus
