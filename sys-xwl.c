@@ -103,21 +103,372 @@ static void new_screen(void)
  * Wayland Shared Memory Interface *
  ***********************************/
 
-struct wl_global *shm_ref;
+/* Shm Pool */
+static void pool_create(struct wl_client *cli, struct wl_resource *res, uint32_t id,
+		int32_t offset, int32_t width, int32_t height, int32_t stride, uint32_t format)
+{
+}
 
-static struct wl_shm_interface shm_iface = {
-	.create_pool = NULL,
+static void pool_destroy(struct wl_client *cli, struct wl_resource *res)
+{
+}
+
+static void pool_resize(struct wl_client *cli, struct wl_resource *res, int32_t size)
+{
+}
+
+static struct wl_shm_pool_interface pool_iface = {
+	.create_buffer = &pool_create,
+	.destroy       = &pool_destroy,
+	.resize        = &pool_resize,
 };
 
-static void shm_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
+/* Shm */
+static void shm_create_pool(struct wl_client *cli, struct wl_resource *shm, uint32_t id,
+		int32_t fd, int32_t size)
 {
-	printf("shm_bind\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_shm_pool_interface, 1, id);
+	wl_resource_set_implementation(res, &pool_iface, NULL, NULL);
+}
 
-	struct wl_resource *res = wl_resource_create(client, &wl_shm_interface, version, id);
+static struct wl_shm_interface shm_iface = {
+	.create_pool = shm_create_pool,
+};
+
+/**************************
+ * Wayland Seat Interface *
+ **************************/
+
+/* Pointer */
+static struct wl_pointer_interface pointer_iface = {
+        .set_cursor = NULL,
+        .release    = NULL,
+};
+
+/* Keyboard */
+static struct wl_keyboard_interface keyboard_iface = {
+        .release    = NULL,
+};
+
+/* Touch */
+static struct wl_touch_interface touch_iface = {
+        .release    = NULL,
+};
+
+/* Seat */
+static void seat_get_pointer(struct wl_client *cli, struct wl_resource *seat, uint32_t id) {
+	printf("seat_get_pointer\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_pointer_interface, 3, id);
+	wl_resource_set_implementation(res, &pointer_iface, NULL, NULL);
+}
+
+static void seat_get_keyboard(struct wl_client *cli, struct wl_resource *seat, uint32_t id) {
+	printf("seat_get_keyboard\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_keyboard_interface, 3, id);
+	wl_resource_set_implementation(res, &keyboard_iface, NULL, NULL);
+}
+
+static void seat_get_touch(struct wl_client *cli, struct wl_resource *seat, uint32_t id) {
+	printf("seat_get_touch\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_touch_interface, 3, id);
+	wl_resource_set_implementation(res, &touch_iface, NULL, NULL);
+}
+
+static struct wl_seat_interface seat_iface = {
+	.get_pointer  = &seat_get_pointer,
+	.get_keyboard = &seat_get_keyboard,
+        .get_touch    = &seat_get_touch,
+};
+
+/*****************************************
+ * Wayland Data Device Manager Interface *
+ *****************************************/
+
+/* Data Offer */
+static struct wl_data_offer_interface doff_iface = {
+        .accept        = NULL,
+        .receive       = NULL,
+        .destroy       = NULL,
+};
+
+/* Data Source */
+static struct wl_data_source_interface dsrc_iface = {
+        .offer         = NULL,
+        .destroy       = NULL,
+};
+
+/* Data Device */
+static struct wl_data_device_interface ddev_iface = {
+        .start_drag    = NULL,
+        .set_selection = NULL,
+};
+
+/* Data Device Manager */
+static void ddm_create_data_source(struct wl_client *cli, struct wl_resource *ddm, uint32_t id)
+{
+	printf("ddm_create_data_source\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_data_device_interface, 1, id);
+	wl_resource_set_implementation(res, &dsrc_iface, NULL, NULL);
+}
+
+static void ddm_get_data_device(struct wl_client *cli, struct wl_resource *ddm, uint32_t id,
+		struct wl_resource *seat)
+{
+	printf("ddm_get_data_device\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_data_device_interface, 1, id);
+	wl_resource_set_implementation(res, &ddev_iface, NULL, NULL);
+}
+
+static struct wl_data_device_manager_interface ddm_iface = {
+	.create_data_source = &ddm_create_data_source,
+	.get_data_device    = &ddm_get_data_device,
+};
+
+/**************************************
+ * Wayland Shell/Compositor Interface *
+ **************************************/
+
+/* Surface */
+static void surface_destroy(struct wl_client *cli, struct wl_resource *res)
+{
+}
+
+static void surface_attach(struct wl_client *cli, struct wl_resource *res, struct wl_resource *buf,
+		int32_t x, int32_t y)
+{
+}
+
+static void surface_damage(struct wl_client *cli, struct wl_resource *res,
+                   int32_t x, int32_t y, int32_t width, int32_t height)
+{
+}
+
+static void surface_frame(struct wl_client *cli, struct wl_resource *res, uint32_t id)
+{
+}
+
+static void surface_set_opaque_region(struct wl_client *cli, struct wl_resource *res, struct wl_resource *reg)
+{
+}
+
+static void surface_set_input_region(struct wl_client *cli, struct wl_resource *res, struct wl_resource *reg)
+{
+}
+
+static void surface_commit(struct wl_client *cli, struct wl_resource *res)
+{
+}
+
+static void surface_set_buffer_transform(struct wl_client *cli, struct wl_resource *res, int32_t transform)
+{
+}
+
+static void surface_set_buffer_scale(struct wl_client *cli, struct wl_resource *res, int32_t scale)
+{
+}
+
+static struct wl_surface_interface surface_iface = {
+        .destroy              = surface_destroy,
+        .attach               = surface_attach,
+        .damage               = surface_damage,
+        .frame                = surface_frame,
+        .set_opaque_region    = surface_set_opaque_region,
+        .set_input_region     = surface_set_input_region,
+        .commit               = surface_commit,
+        .set_buffer_transform = surface_set_buffer_transform,
+        .set_buffer_scale     = surface_set_buffer_scale,
+};
+
+/* Region */
+static void region_destroy(struct wl_client *cli, struct wl_resource *res)
+{
+}
+
+static void region_add(struct wl_client *cli, struct wl_resource *res,
+                int32_t x, int32_t y, int32_t width, int32_t height)
+{
+}
+
+static void region_subtract(struct wl_client *cli, struct wl_resource *res,
+                     int32_t x, int32_t y, int32_t width, int32_t height)
+{
+}
+
+static struct wl_region_interface region_iface = {
+        .destroy  = region_destroy,
+        .add      = region_add,
+        .subtract = region_subtract,
+};
+
+/* Buffer */
+static struct wl_buffer_interface buffer_iface = {
+        .destroy  = NULL,
+};
+
+/* Compositor */
+static void comp_create_surface(struct wl_client *cli, struct wl_resource *comp, uint32_t id)
+{
+	printf("comp_create_surface\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_surface_interface, 3, id);
+	wl_resource_set_implementation(res, &surface_iface, NULL, NULL);
+}
+
+static void comp_create_region(struct wl_client *cli, struct wl_resource *comp, uint32_t id)
+{
+	printf("comp_create_region\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_region_interface, 1, id);
+	wl_resource_set_implementation(res, &region_iface, NULL, NULL);
+}
+
+static struct wl_compositor_interface comp_iface = {
+	.create_surface = comp_create_surface,
+	.create_region  = comp_create_region,
+};
+
+/* Shell Surface */
+static void ssurface_pong(struct wl_client *cli, struct wl_resource *res, uint32_t serial)
+{
+}
+
+static void ssurface_move(struct wl_client *cli, struct wl_resource *res, struct wl_resource *seat, uint32_t serial)
+{
+}
+
+static void ssurface_resize(struct wl_client *cli, struct wl_resource *res, struct wl_resource *seat,
+		uint32_t serial, uint32_t edges)
+{
+}
+
+static void ssurface_set_toplevel(struct wl_client *cli, struct wl_resource *res)
+{
+}
+
+static void ssurface_set_transient(struct wl_client *cli, struct wl_resource *res, struct wl_resource *parent,
+		int32_t x, int32_t y, uint32_t flags)
+{
+}
+
+static void ssurface_set_fullscreen(struct wl_client *cli, struct wl_resource *res,
+		uint32_t method, uint32_t framerate, struct wl_resource *out)
+{
+}
+
+static void ssurface_set_popup(struct wl_client *cli, struct wl_resource *res,
+		struct wl_resource *seat, uint32_t serial, struct wl_resource *parent,
+		int32_t x, int32_t y, uint32_t flags)
+{
+}
+
+static void ssurface_set_maximized(struct wl_client *cli, struct wl_resource *res, struct wl_resource *out)
+{
+}
+
+static void ssurface_set_title(struct wl_client *cli, struct wl_resource *res, const char *title)
+{
+}
+
+static void ssurface_set_class(struct wl_client *cli, struct wl_resource *res, const char *class)
+{
+}
+
+static struct wl_shell_surface_interface ssurface_iface = {
+        .pong           = ssurface_pong,
+        .move           = ssurface_move,
+        .resize         = ssurface_resize,
+        .set_toplevel   = ssurface_set_toplevel,
+        .set_transient  = ssurface_set_transient,
+        .set_fullscreen = ssurface_set_fullscreen,
+        .set_popup      = ssurface_set_popup,
+        .set_maximized  = ssurface_set_maximized,
+        .set_title      = ssurface_set_title,
+        .set_class      = ssurface_set_class,
+};
+
+/* Shell */
+static void shell_get_shell_surface(struct wl_client *cli, struct wl_resource *shell, uint32_t id,
+                              struct wl_resource *sfc) {
+	printf("shell_get_shell_surface\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_shell_surface_interface, 1, id);
+	wl_resource_set_implementation(res, &ssurface_iface, NULL, NULL);
+}
+
+static struct wl_shell_interface shell_iface = {
+	.get_shell_surface = shell_get_shell_surface,
+};
+
+/*******************
+ * Wayland Globals *
+ *******************/
+
+/* References */
+static struct wl_global *ref_shm;
+static struct wl_global *ref_output;
+static struct wl_global *ref_seat;
+static struct wl_global *ref_ddm;
+static struct wl_global *ref_comp;
+static struct wl_global *ref_shell;
+
+/* Bind functions */
+static void bind_shm(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_shm\n");
+
+	struct wl_resource *res = wl_resource_create(cli, &wl_shm_interface, version, id);
 	wl_resource_set_implementation(res, &shm_iface, NULL, NULL);
 
 	wl_shm_send_format(res, WL_SHM_FORMAT_XRGB8888);
 	wl_shm_send_format(res, WL_SHM_FORMAT_ARGB8888);
+}
+
+static void bind_output(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_output\n");
+
+	struct wl_resource *res = wl_resource_create(cli, &wl_output_interface, version, id);
+
+	wl_output_send_geometry(res,
+			0, 0, 100, 100,              // x/y (px), w/h (mm)
+			WL_OUTPUT_SUBPIXEL_UNKNOWN,  // subpixel format
+			"unknown", "unknown",        // make, model
+			WL_OUTPUT_TRANSFORM_NORMAL); // rotatoin
+	wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 800,  600,  60);
+	wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 1024, 768,  60);
+	wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 1280, 1024, 60);
+	wl_output_send_done(res);
+}
+
+static void bind_seat(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_seat\n");
+
+	struct wl_resource *res = wl_resource_create(cli, &wl_seat_interface, version, id);
+	wl_resource_set_implementation(res, &seat_iface, NULL, NULL);
+
+	wl_seat_send_capabilities(res,
+			WL_SEAT_CAPABILITY_KEYBOARD |
+			WL_SEAT_CAPABILITY_POINTER);
+}
+
+static void bind_ddm(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_ddm\n");
+
+	struct wl_resource *res = wl_resource_create(cli, &wl_data_device_manager_interface, version, id);
+	wl_resource_set_implementation(res, &ddm_iface, NULL, NULL);
+}
+
+static void bind_comp(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_comp\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_compositor_interface, version, id);
+	wl_resource_set_implementation(res, &comp_iface, NULL, NULL);
+}
+
+static void bind_shell(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_shell\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_shell_interface, version, id);
+	wl_resource_set_implementation(res, &shell_iface, NULL, NULL);
 }
 
 /********************
@@ -141,7 +492,7 @@ void sys_focus(win_t *win)
 
 void sys_show(win_t *win, state_t state)
 {
-	printf("sys_show: %p: %d", win, state);
+	printf("sys_show: %p: %d\n", win, state);
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
@@ -178,7 +529,12 @@ win_t *sys_init(void)
 		error("Unable to get event loop");
 
 	/* Register interfaces */
-	shm_ref = wl_global_create(display, &wl_shm_interface, 1, NULL, &shm_bind);
+	ref_shm    = wl_global_create(display, &wl_shm_interface,                 1, NULL, &bind_shm);
+	ref_output = wl_global_create(display, &wl_output_interface,              2, NULL, &bind_output);
+	ref_seat   = wl_global_create(display, &wl_seat_interface,                3, NULL, &bind_seat);
+	ref_comp   = wl_global_create(display, &wl_compositor_interface,          3, NULL, &bind_comp);
+	ref_shell  = wl_global_create(display, &wl_shell_interface,               1, NULL, &bind_shell);
+	ref_ddm    = wl_global_create(display, &wl_data_device_manager_interface, 1, NULL, &bind_ddm);
 
 	/* Setup GTK display */
 	gtk_init(&conf_argc, &conf_argv);
