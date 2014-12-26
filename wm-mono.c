@@ -32,7 +32,7 @@ list_t *focus;
 list_t *screens;
 
 /* Helper functions */
-void wm_show(list_t *node)
+static void wm_show(list_t *node)
 {
 	focus = node;
 	if (!node) return;
