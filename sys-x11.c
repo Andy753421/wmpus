@@ -459,16 +459,17 @@ static void process_event(int type, XEvent *xe, win_t *root)
 				cre->window, cre->value_mask,
 				cre->height, cre->width, cre->x, cre->y);
 		if ((win = win_find(dpy,cre->window,1))) {
+			int border_width = (win->type == TYPE_TOOLBAR ? 0 : border);
 			XSendEvent(dpy, cre->window, False, StructureNotifyMask, &(XEvent){
-				.xconfigure.type              = ConfigureNotify,
-				.xconfigure.display           = win->sys->dpy,
-				.xconfigure.event             = win->sys->xid,
-				.xconfigure.window            = win->sys->xid,
-				.xconfigure.x                 = win->x,
-				.xconfigure.y                 = win->y,
-				.xconfigure.width             = win->w,
-				.xconfigure.height            = win->h,
-				.xconfigure.border_width      = border,
+				.xconfigure.type         = ConfigureNotify,
+				.xconfigure.display      = win->sys->dpy,
+				.xconfigure.event        = win->sys->xid,
+				.xconfigure.window       = win->sys->xid,
+				.xconfigure.x            = win->x,
+				.xconfigure.y            = win->y,
+				.xconfigure.width        = win->w,
+				.xconfigure.height       = win->h,
+				.xconfigure.border_width = border_width,
 			});
 			XSync(win->sys->dpy, False);
 		}
@@ -608,10 +609,10 @@ void sys_show(win_t *win, state_t state)
 				PropModeReplace, (unsigned char*)0, 0);
 
 	/* Update border */
-	if (state == ST_SHOW || state == ST_MAX || state == ST_SHADE)
-		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
-	else if (state == ST_FULL)
+	if (win->type == TYPE_TOOLBAR || state == ST_FULL)
 		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, 0);
+	else if (state == ST_SHOW || state == ST_MAX || state == ST_SHADE)
+		XSetWindowBorderWidth(win->sys->dpy, win->sys->xid, border);
 
 	/* Map/Unmap window */
 	if (state == ST_SHOW || state == ST_FULL || state == ST_MAX || state == ST_SHADE)
