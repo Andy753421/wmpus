@@ -3,6 +3,7 @@
 
 -include config.mk
 
+# Common configuration
 VERSION   ?= 0.1-rc1
 WM        ?= wmii
 SYS       ?= x11
@@ -10,6 +11,7 @@ CFLAGS    ?= -g -Wall
 PREFIX    ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man
 
+# System specific configuration
 ifeq ($(SYS),xcb)
 GCC       ?= gcc
 PROG      ?= wmpus
@@ -26,6 +28,11 @@ ifeq ($(SYS),xwl)
 GCC       ?= gcc
 PROG      ?= wmpus
 LDFLAGS   += -lwayland-client -lwayland-server
+
+PROTOCOL  ?= gtk-shell xdg-shell
+HEADERS   += $(addsuffix -client-protocol.h,$(PROTOCOL))
+HEADERS   += $(addsuffix -server-protocol.h,$(PROTOCOL))
+OBJECTS   += $(addsuffix -protocol.o,$(PROTOCOL))
 
 sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-3.0)
 wmpus:     LDFLAGS += $(shell pkg-config --libs   gtk+-3.0)
@@ -49,10 +56,11 @@ PROG      ?= wmpus.exe
 LDFLAGS   += -lgdi32
 endif
 
-all: $(PROG)
+# Targets
+all: $(HEADERS) $(PROG)
 
 clean:
-	rm -f wmpus *.exe *.o
+	rm -f wmpus *.exe *.o *-protocol.[ch]
 
 dist:
 	tar -czf wmpus-$(VERSION).tar.gz --transform s::wmpus-$(VERSION)/: \
@@ -69,10 +77,21 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(PROG)
 	rm -f $(DESTDIR)$(MANPREFIX)/man1/wmpus.1
 
-$(PROG): main.o conf.o util.o sys-$(SYS).o wm-$(WM).o
+# Common Rules
+$(PROG): main.o conf.o util.o sys-$(SYS).o wm-$(WM).o $(OBJECTS)
 	$(GCC) $(CFLAGS) -o $@ $+ $(LDFLAGS)
 
 %.o: %.c $(wildcard *.h) makefile
 	$(GCC) $(CFLAGS) --std=gnu99 -c -o $@ $<
+
+# Wayland Rules
+%-protocol.c: %.xml
+	wayland-scanner code < $+ > $@
+
+%-server-protocol.h: %.xml
+	wayland-scanner server-header < $+ > $@
+
+%-client-protocol.h: %.xml
+	wayland-scanner client-header < $+ > $@
 
 .PHONY: all clean dist install uninstall

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Andy Spencer <andy753421@gmail.com>
+ * Copyright (c) 2014-2015 Andy Spencer <andy753421@gmail.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -31,6 +31,11 @@
 #include "conf.h"
 #include "sys.h"
 #include "wm.h"
+
+#include "xdg-shell-client-protocol.h"
+#include "xdg-shell-server-protocol.h"
+#include "gtk-shell-client-protocol.h"
+#include "gtk-shell-server-protocol.h"
 
 /* Internal structures */
 struct win_sys {
@@ -156,8 +161,13 @@ static void new_screen(void)
 /****************************
  * Wayland Buffer Interface *
  ****************************/
+static void buffer_destroy(struct wl_client *cli, struct wl_resource *reso)
+{
+	printf("buffer_destroy\n");
+}
+
 static struct wl_buffer_interface buffer_iface = {
-        .destroy  = NULL,
+        .destroy  = buffer_destroy,
 };
 
 /***********************************
@@ -250,19 +260,43 @@ static struct wl_shm_interface shm_iface = {
  **************************/
 
 /* Pointer */
+static void pointer_set_cursor(struct wl_client *cli, struct wl_resource *ptr,
+			   uint32_t serial,
+			   struct wl_resource *surface,
+			   int32_t hotspot_x,
+			   int32_t hotspot_y)
+{
+	printf("pointer_set_cursor\n");
+}
+
+static void pointer_release(struct wl_client *cli, struct wl_resource *ptr)
+{
+	printf("pointer_release\n");
+}
+
 static struct wl_pointer_interface pointer_iface = {
-        .set_cursor = NULL,
-        .release    = NULL,
+        .set_cursor = pointer_set_cursor,
+        .release    = pointer_release,
 };
 
 /* Keyboard */
+static void keyboard_release(struct wl_client *cli, struct wl_resource *kbd)
+{
+	printf("keyboard_release\n");
+}
+
 static struct wl_keyboard_interface keyboard_iface = {
-        .release    = NULL,
+        .release = keyboard_release,
 };
 
 /* Touch */
+static void touch_release(struct wl_client *cli, struct wl_resource *tch)
+{
+	printf("touch_release\n");
+}
+
 static struct wl_touch_interface touch_iface = {
-        .release    = NULL,
+        .release = touch_release,
 };
 
 /* Seat */
@@ -276,7 +310,7 @@ static void seat_get_pointer(struct wl_client *cli, struct wl_resource *seat,
 static void seat_get_keyboard(struct wl_client *cli, struct wl_resource *seat,
 		uint32_t id) {
 	printf("seat_get_keyboard\n");
-	struct wl_resource *res = wl_resource_create(cli, &wl_keyboard_interface, 3, id);
+	struct wl_resource *res = wl_resource_create(cli, &wl_keyboard_interface, 4, id);
 	wl_resource_set_implementation(res, &keyboard_iface, NULL, NULL);
 }
 
@@ -298,22 +332,64 @@ static struct wl_seat_interface seat_iface = {
  *****************************************/
 
 /* Data Offer */
+static void doff_accept(struct wl_client *cli, struct wl_resource *res,
+	       uint32_t serial, const char *mime_type)
+{
+	printf("doff_accept\n");
+}
+
+static void doff_receive(struct wl_client *cli, struct wl_resource *res,
+		const char *mime_type, int32_t fd)
+{
+	printf("doff_receive\n");
+}
+
+static void doff_destroy(struct wl_client *cli, struct wl_resource *res)
+{
+	printf("doff_destroy\n");
+}
+
 static struct wl_data_offer_interface doff_iface = {
-        .accept        = NULL,
-        .receive       = NULL,
-        .destroy       = NULL,
+        .accept  = doff_accept,
+        .receive = doff_receive,
+        .destroy = doff_destroy,
 };
 
 /* Data Source */
+static void dsrc_offer(struct wl_client *cli, struct wl_resource *res,
+	      const char *mime_type)
+{
+	(void)doff_iface;
+	printf("dsrc_offer\n");
+}
+
+static void dsrc_destroy(struct wl_client *cli, struct wl_resource *res)
+{
+	printf("dsrc_destroy\n");
+}
+
 static struct wl_data_source_interface dsrc_iface = {
-        .offer         = NULL,
-        .destroy       = NULL,
+        .offer   = dsrc_offer,
+        .destroy = dsrc_destroy,
 };
 
 /* Data Device */
+static void ddev_start_drag(struct wl_client *cli, struct wl_resource *res,
+		   struct wl_resource *source, struct wl_resource *origin,
+		   struct wl_resource *icon, uint32_t serial)
+{
+	printf("start_drag\n");
+}
+
+static void ddev_set_selection(struct wl_client *cli, struct wl_resource *res,
+		      struct wl_resource *source, uint32_t serial)
+{
+	printf("set_selection\n");
+}
+
 static struct wl_data_device_interface ddev_iface = {
-        .start_drag    = NULL,
-        .set_selection = NULL,
+        .start_drag    = ddev_start_drag,
+        .set_selection = ddev_set_selection,
 };
 
 /* Data Device Manager */
@@ -552,6 +628,176 @@ static struct wl_shell_interface shell_iface = {
 	.get_shell_surface = shell_get_shell_surface,
 };
 
+/* XDG Popup */
+static void xpopup_destroy(struct wl_client *cli, struct wl_resource *xpopup)
+{
+	printf("xpopup_destroy\n");
+}
+
+static struct xdg_popup_interface xpopup_iface = {
+	.destroy = xpopup_destroy,
+};
+
+/* XDG Surface */
+static void xsurface_destroy(struct wl_client *cli, struct wl_resource *xsfc)
+{
+	printf("xsurface_destroy\n");
+}
+
+static void xsurface_set_parent(struct wl_client *cli, struct wl_resource *xsfc,
+		struct wl_resource *parent)
+{
+	printf("xsurface_set_parent\n");
+}
+
+static void xsurface_set_title(struct wl_client *cli, struct wl_resource *xsfc,
+		const char *title)
+{
+	printf("xsurface_set_title\n");
+}
+
+static void xsurface_set_app_id(struct wl_client *cli, struct wl_resource *xsfc,
+		const char *app_id)
+{
+	printf("xsurface_set_app_id\n");
+}
+
+static void xsurface_show_window_menu(struct wl_client *cli, struct wl_resource *xsfc,
+		struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y)
+{
+	printf("xsurface_show_window_menu\n");
+}
+
+static void xsurface_move(struct wl_client *cli, struct wl_resource *xsfc,
+		struct wl_resource *seat, uint32_t serial)
+{
+	printf("xsurface_move\n");
+}
+
+static void xsurface_resize(struct wl_client *cli, struct wl_resource *xsfc,
+		struct wl_resource *seat, uint32_t serial, uint32_t edges)
+{
+	printf("xsurface_resize\n");
+}
+
+static void xsurface_ack_configure(struct wl_client *cli, struct wl_resource *xsfc,
+		uint32_t serial)
+{
+	printf("xsurface_ack_configure\n");
+}
+
+static void xsurface_set_window_geometry(struct wl_client *cli, struct wl_resource *xsfc,
+		int32_t x, int32_t y, int32_t width, int32_t height)
+{
+	printf("xsurface_set_window_geometry\n");
+}
+
+static void xsurface_set_maximized(struct wl_client *cli, struct wl_resource *xsfc)
+{
+	printf("xsurface_set_maximized\n");
+}
+
+static void xsurface_unset_maximized(struct wl_client *cli, struct wl_resource *xsfc)
+{
+	printf("xsurface_unset_maximized\n");
+}
+
+static void xsurface_set_fullscreen(struct wl_client *cli, struct wl_resource *xsfc,
+		struct wl_resource *output)
+{
+	printf("xsurface_set_fullscreen\n");
+}
+
+static void xsurface_unset_fullscreen(struct wl_client *cli, struct wl_resource *xsfc)
+{
+	printf("xsurface_unset_fullscreen\n");
+}
+
+static void xsurface_set_minimized(struct wl_client *cli, struct wl_resource *xsfc)
+{
+	printf("xsurface_set_minimized\n");
+}
+
+static struct xdg_surface_interface xsurface_iface = {
+	.destroy             = xsurface_destroy,
+	.set_parent          = xsurface_set_parent,
+	.set_title           = xsurface_set_title,
+	.set_app_id          = xsurface_set_app_id,
+	.show_window_menu    = xsurface_show_window_menu,
+	.move                = xsurface_move,
+	.resize              = xsurface_resize,
+	.ack_configure       = xsurface_ack_configure,
+	.set_window_geometry = xsurface_set_window_geometry,
+	.set_maximized       = xsurface_set_maximized,
+	.unset_maximized     = xsurface_unset_maximized,
+	.set_fullscreen      = xsurface_set_fullscreen,
+	.unset_fullscreen    = xsurface_unset_fullscreen,
+	.set_minimized       = xsurface_set_minimized,
+};
+
+/* XDG Shell */
+static void xshell_use_unstable_version(struct wl_client *cli, struct wl_resource *gshell,
+		int32_t version)
+{
+	printf("xshell_use_unstable_version\n");
+}
+
+static void xshell_get_xdg_surface(struct wl_client *cli, struct wl_resource *gshell,
+		uint32_t id, struct wl_resource *surface)
+{
+	printf("xshell_get_xdg_surface\n");
+	struct wl_resource *res = wl_resource_create(cli, &xdg_surface_interface, 1, id);
+	wl_resource_set_implementation(res, &xsurface_iface, NULL, NULL);
+}
+
+static void xshell_get_xdg_popup(struct wl_client *cli, struct wl_resource *gshell,
+		uint32_t id, struct wl_resource *surface, struct wl_resource *parent,
+		struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y, uint32_t flags)
+{
+	printf("xshell_get_xdg_popup\n");
+	struct wl_resource *res = wl_resource_create(cli, &xdg_popup_interface, 1, id);
+	wl_resource_set_implementation(res, &xpopup_iface, NULL, NULL);
+}
+
+static void xshell_pong(struct wl_client *cli, struct wl_resource *gshell,
+		uint32_t serial)
+{
+	printf("xshell_pong\n");
+}
+
+static struct xdg_shell_interface xshell_iface = {
+	.use_unstable_version = xshell_use_unstable_version,
+	.get_xdg_surface      = xshell_get_xdg_surface,
+	.get_xdg_popup        = xshell_get_xdg_popup,
+	.pong                 = xshell_pong,
+};
+
+/* GTK Surface */
+static void gsurface_set_dbus_properties(struct wl_client *cli, struct wl_resource *gsfc,
+			    const char *application_id, const char *app_menu_path,
+			    const char *menubar_path, const char *window_object_path,
+			    const char *application_object_path, const char *unique_bus_name)
+{
+	printf("gsurface_set_dbus_properties\n");
+}
+
+static struct gtk_surface_interface gsurface_iface = {
+	.set_dbus_properties = gsurface_set_dbus_properties,
+};
+
+/* GTK Shell */
+static void gshell_get_gtk_surface(struct wl_client *cli, struct wl_resource *gshell,
+		uint32_t id, struct wl_resource *sfc)
+{
+	printf("gshell_get_gtk_surface\n");
+	struct wl_resource *res = wl_resource_create(cli, &gtk_surface_interface, 1, id);
+	wl_resource_set_implementation(res, &gsurface_iface, NULL, NULL);
+}
+
+static struct gtk_shell_interface gshell_iface = {
+	.get_gtk_surface = gshell_get_gtk_surface,
+};
+
 /*******************
  * Wayland Globals *
  *******************/
@@ -563,6 +809,8 @@ static struct wl_global *ref_seat;
 static struct wl_global *ref_ddm;
 static struct wl_global *ref_comp;
 static struct wl_global *ref_shell;
+static struct wl_global *ref_xshell;
+static struct wl_global *ref_gshell;
 
 /* Bind functions */
 static void bind_shm(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
@@ -631,6 +879,20 @@ static void bind_shell(struct wl_client *cli, void *data, uint32_t version, uint
 	wl_resource_set_implementation(res, &shell_iface, NULL, NULL);
 }
 
+static void bind_xshell(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_xshell\n");
+	struct wl_resource *res = wl_resource_create(cli, &xdg_shell_interface, version, id);
+	wl_resource_set_implementation(res, &xshell_iface, NULL, NULL);
+}
+
+static void bind_gshell(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_gshell\n");
+	struct wl_resource *res = wl_resource_create(cli, &gtk_shell_interface, version, id);
+	wl_resource_set_implementation(res, &gshell_iface, NULL, NULL);
+}
+
 /********************
  * System functions *
  ********************/
@@ -694,7 +956,9 @@ win_t *sys_init(void)
 	ref_ddm    = wl_global_create(display, &wl_data_device_manager_interface, 1, NULL, &bind_ddm);
 	ref_shell  = wl_global_create(display, &wl_shell_interface,               1, NULL, &bind_shell);
 	ref_comp   = wl_global_create(display, &wl_compositor_interface,          3, NULL, &bind_comp);
-	ref_seat   = wl_global_create(display, &wl_seat_interface,                3, NULL, &bind_seat);
+	ref_seat   = wl_global_create(display, &wl_seat_interface,                4, NULL, &bind_seat);
+	ref_xshell = wl_global_create(display, &xdg_shell_interface,              1, NULL, &bind_xshell);
+	ref_gshell = wl_global_create(display, &gtk_shell_interface,              1, NULL, &bind_gshell);
 
 	/* Setup GTK display */
 	gtk_init(&conf_argc, &conf_argv);

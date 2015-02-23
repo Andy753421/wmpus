@@ -1,6 +1,8 @@
 *~
 *.o
 *.swp
+*-protocol.c
+*-protocol.h
 .vimrc
 config.mk
 local
