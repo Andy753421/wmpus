@@ -22,6 +22,14 @@ PROG      ?= wmpus
 LDFLAGS   += -lX11 -lXinerama
 endif
 
+ifeq ($(SYS),gwl)
+GCC       ?= gcc
+PROG      ?= wmpus
+
+sys-gwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-3.0) -I.
+wmpus:     LDFLAGS += $(shell pkg-config --libs   gtk+-3.0)
+endif
+
 ifeq ($(SYS),win32)
 GCC       ?= mingw32-gcc
 PROG      ?= wmpus.exe
