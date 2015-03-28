@@ -96,7 +96,6 @@ static gboolean on_button(GtkWidget *widget, GdkEventButton *event, gpointer use
 
 static gboolean on_move(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
 {
-	//printf("on_motion\n");
 	return TRUE;
 }
 
@@ -114,23 +113,6 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 	cairo_arc(cairo, 150, 150, 50, 0, 2*G_PI);
 	cairo_fill(cairo);
 
-	//int gi = 0, mi;
-	//FILE *fd = fopen("/tmp/mem.txt", "w+");
-	//for (gi = 0; gi < 10; gi++) {
-	//	mi = 0;
-	//	while (gdata[gi] && (mi+32) < gdata[gi]->size) {
-	//		fprintf(fd, "%d %p %08x: ", gi, gdata[gi]->mem, mi);
-	//		for (int i = 0; i < 16; mi++, i += 2)
-	//			fprintf(fd, "%02hhx%02hhx ",
-	//				gdata[gi]->mem[mi+0],
-	//				gdata[gi]->mem[mi+1]);
-	//		fprintf(fd, "\n");
-	//	}
-	//	fprintf(fd, "\n");
-	//}
-	//printf("\n");
-	//fclose(fd);
-
 	return TRUE;
 }
 
@@ -141,22 +123,6 @@ static gboolean on_wayland(gpointer user_data)
 	wl_event_loop_dispatch(events, 0);
 	return TRUE;
 }
-
-/*********************
- * Wayland Callbacks *
- *********************/
-
-#if 0
-static void new_window(void)
-{
-	printf("new_window\n");
-}
-
-static void new_screen(void)
-{
-	printf("new_screen\n");
-}
-#endif
 
 /****************************
  * Wayland Buffer Interface *
@@ -839,10 +805,10 @@ static void bind_output(struct wl_client *cli, void *data, uint32_t version, uin
 			WL_OUTPUT_SUBPIXEL_UNKNOWN,  // subpixel format
 			"unknown", "unknown",        // make, model
 			WL_OUTPUT_TRANSFORM_NORMAL); // rotatoin
-	//wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 800,  600,  60);
-	//wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 1024, 768,  60);
+	wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 800,  600,  60);
+	wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 1024, 768,  60);
 	wl_output_send_mode(res, WL_OUTPUT_MODE_CURRENT, 1280, 1024, 60);
-	//wl_output_send_done(res);
+	wl_output_send_done(res);
 }
 
 static void bind_seat(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
