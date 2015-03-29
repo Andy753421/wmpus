@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#include <libevdev/libevdev.h>
 #include <xkbcommon/xkbcommon.h>
 #include <wayland-server.h>
 #include <wayland-client.h>
@@ -42,33 +43,108 @@ void wm_update(void);
 
 /* Wayland user data */
 typedef struct {
-	uint8_t *mem;
-	size_t   size;
+	uint8_t             *mem;
+	size_t               size;
 } sys_pool_t;
 
 typedef struct {
-	sys_pool_t      *pool;
-	uint8_t         *mem;
-	cairo_surface_t *surface;
-} sys_buf_t;
+	sys_pool_t          *pool;
+	uint8_t             *mem;
+	cairo_surface_t     *surface;
+} sys_bdata_t;
+
+typedef struct {
+	struct wl_client    *cli;
+	list_t              *ptrs;    // of struct wl_resource
+	list_t              *kbds;    // of struct wl_resource
+	list_t              *tchs;    // of struct wl_resource
+} sys_cdata_t;
 
 /* Internal structures */
 struct win_sys {
-	struct wl_client   *cli;
-	struct wl_resource *sfc;
-	struct wl_resource *ssfc;
-	struct wl_resource *xsfc;
-	sys_buf_t          *buf;
+	struct wl_resource  *sfc;
+	struct wl_resource  *ssfc;
+	struct wl_resource  *xsfc;
+	struct wl_resource  *buf;
+	sys_cdata_t         *cdata;
+	int                  x,y;     // surface x,y
+	int                  wx,wy;   // window  x,y inside sfc
+	int                  ww,wh;   // window  w,h inside sfc
 };
 
 /* Global data */
 static win_t                *root;
+static win_t                *focus;
+static list_t               *clients; // of sys_cdata_t
+static list_t               *windows; // of win_t
+
+static win_t                *cursor;
+static double                cursor_x;
+static double                cursor_y;
+static double                cursor_dx;
+static double                cursor_dy;
+
 static GtkWidget            *screen;
-static list_t               *windows;
 
 static struct wl_resource   *output;
 static struct wl_display    *display;
 static struct wl_event_loop *events;
+
+/********************
+ * Helper Functions *
+ ********************/
+
+static int get_serial(void)
+{
+	static int serial = 0;
+	return serial++;
+}
+
+static int get_time(void)
+{
+	static uint64_t epoch;
+
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+
+	uint64_t now = (((uint64_t)ts.tv_sec ) * 1000)
+	             + (((uint64_t)ts.tv_nsec) / 1000000);
+
+	if (epoch == 0)
+		epoch = now;
+
+	return (int)(now - epoch);
+}
+
+static win_t *find_win(int x, int y)
+{
+	for (list_t *cur = windows; cur; cur = cur->prev) {
+		win_t *win = cur->data;
+		int l = win->x;
+		int r = win->w + l;
+		int t = win->y;
+		int b = win->h + t;
+		if (l <= x && x <= r && t <= y && y <= b)
+			return win;
+	}
+	return NULL;
+}
+
+static sys_cdata_t *find_cdata(struct wl_client *cli)
+{
+	// Search for existing client
+	for (list_t *cur = clients; cur; cur = cur->next) {
+		sys_cdata_t *cdata = cur->data;
+		if (cdata->cli == cli)
+			return cdata;
+	}
+
+	// Not found, create new one
+	sys_cdata_t *cdata = new0(sys_cdata_t);
+	clients = list_insert(clients, cdata);
+	cdata->cli = cli;
+	return cdata;
+}
 
 /****************************
  * Wayland Buffer Interface *
@@ -91,14 +167,14 @@ static void pool_create_buffer(struct wl_client *cli, struct wl_resource *pool,
 		uint32_t id, int32_t offset, int32_t width, int32_t height,
 		int32_t stride, uint32_t format)
 {
-	sys_buf_t  *buf  = new0(sys_buf_t);
-	buf->pool = wl_resource_get_user_data(pool);
-	buf->mem  = buf->pool->mem + offset;
+	sys_bdata_t *bdata = new0(sys_bdata_t);
+	bdata->pool = wl_resource_get_user_data(pool);
+	bdata->mem  = bdata->pool->mem + offset;
 
 	printf("pool_create_buffer - %dx%d %p+%d : %d,%d,%d\n",
-			width, height, buf->pool->mem, offset, id, stride, format);
+			width, height, bdata->pool->mem, offset, id, stride, format);
 
-	if (offset > buf->pool->size || offset < 0)
+	if (offset > bdata->pool->size || offset < 0)
 	{
 		printf("\n\nerror\n\n");
 		wl_resource_post_error(pool, WL_SHM_ERROR_INVALID_STRIDE,
@@ -110,11 +186,11 @@ static void pool_create_buffer(struct wl_client *cli, struct wl_resource *pool,
 		format == WL_SHM_FORMAT_ARGB8888 ? CAIRO_FORMAT_ARGB32 :
 		format == WL_SHM_FORMAT_XRGB8888 ? CAIRO_FORMAT_RGB24  : CAIRO_FORMAT_INVALID;
 
-	buf->surface = cairo_image_surface_create_for_data(buf->mem, cf, width, height, stride);
+	bdata->surface = cairo_image_surface_create_for_data(bdata->mem, cf, width, height, stride);
 
 	struct wl_resource *res = wl_resource_create(cli, &wl_buffer_interface,
                                         wl_resource_get_version(pool), id);
-	wl_resource_set_implementation(res, &buffer_iface, buf, NULL);
+	wl_resource_set_implementation(res, &buffer_iface, bdata, NULL);
 }
 
 static void pool_destroy(struct wl_client *cli, struct wl_resource *pool)
@@ -170,11 +246,27 @@ static struct wl_shm_interface shm_iface = {
  **************************/
 
 /* Pointer */
+static void pointer_kill(struct wl_resource *ptr)
+{
+	sys_cdata_t *cdata = wl_resource_get_user_data(ptr);
+	list_t *link = list_find(cdata->ptrs, ptr);
+	cdata->ptrs = list_remove(cdata->ptrs, link, 0);
+	if (!cdata->ptrs && !cdata->kbds && !cdata->tchs) {
+		list_t *clink = list_find(clients, cdata);
+		clients = list_remove(clients, clink, 1);
+	}
+}
+
 static void pointer_set_cursor(struct wl_client *cli, struct wl_resource *ptr,
 			   uint32_t serial, struct wl_resource *sfc,
 			   int32_t hotspot_x, int32_t hotspot_y)
 {
-	printf("pointer_set_cursor\n");
+	printf("pointer_set_cursor %d,%d\n", hotspot_x, hotspot_y);
+	win_t *win = wl_resource_get_user_data(sfc);
+	win->type = TYPE_CURSOR;
+	cursor_dx = hotspot_x;
+	cursor_dy = hotspot_y;
+	cursor    = win;
 }
 
 static void pointer_release(struct wl_client *cli, struct wl_resource *ptr)
@@ -188,6 +280,17 @@ static struct wl_pointer_interface pointer_iface = {
 };
 
 /* Keyboard */
+static void keyboard_kill(struct wl_resource *kbd)
+{
+	sys_cdata_t *cdata = wl_resource_get_user_data(kbd);
+	list_t *link = list_find(cdata->kbds, kbd);
+	cdata->kbds = list_remove(cdata->kbds, link, 0);
+	if (!cdata->ptrs && !cdata->kbds && !cdata->tchs) {
+		list_t *clink = list_find(clients, cdata);
+		clients = list_remove(clients, clink, 1);
+	}
+}
+
 static void keyboard_release(struct wl_client *cli, struct wl_resource *kbd)
 {
 	printf("keyboard_release\n");
@@ -198,6 +301,17 @@ static struct wl_keyboard_interface keyboard_iface = {
 };
 
 /* Touch */
+static void touch_kill(struct wl_resource *tch)
+{
+	sys_cdata_t *cdata = wl_resource_get_user_data(tch);
+	list_t *link = list_find(cdata->tchs, tch);
+	cdata->tchs = list_remove(cdata->tchs, link, 0);
+	if (!cdata->ptrs && !cdata->kbds && !cdata->tchs) {
+		list_t *clink = list_find(clients, cdata);
+		clients = list_remove(clients, clink, 1);
+	}
+}
+
 static void touch_release(struct wl_client *cli, struct wl_resource *tch)
 {
 	printf("touch_release\n");
@@ -210,23 +324,37 @@ static struct wl_touch_interface touch_iface = {
 /* Seat */
 static void seat_get_pointer(struct wl_client *cli, struct wl_resource *seat,
 		uint32_t id) {
-	printf("seat_get_pointer\n");
+	sys_cdata_t *cdata = find_cdata(cli);
 	struct wl_resource *res = wl_resource_create(cli, &wl_pointer_interface, 3, id);
-	wl_resource_set_implementation(res, &pointer_iface, NULL, NULL);
+	wl_resource_set_implementation(res, &pointer_iface, cdata, pointer_kill);
+	cdata->ptrs = list_insert(cdata->ptrs, res);
+	printf("seat_get_pointer - cli=%p cdata=%p ptr=%p\n", cli, cdata, res);
 }
 
 static void seat_get_keyboard(struct wl_client *cli, struct wl_resource *seat,
 		uint32_t id) {
-	printf("seat_get_keyboard\n");
+	sys_cdata_t *cdata = find_cdata(cli);
 	struct wl_resource *res = wl_resource_create(cli, &wl_keyboard_interface, 4, id);
-	wl_resource_set_implementation(res, &keyboard_iface, NULL, NULL);
+	wl_resource_set_implementation(res, &keyboard_iface, cdata, keyboard_kill);
+
+	//map = xkb_keymap_new_from_names(xkb->context, NULL, 0);
+	//xkb->context    = xkb_context_new(0);
+	//xkb->keymap.map = xkb_keymap_new_from_names(xkb->context, NULL, 0);
+	//wl_keyboard_send_keymap(cli, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1,
+	//		keyboard->xkb.keymap.fd,
+	//		keyboard->xkb.keymap.size - 1);
+
+	cdata->kbds = list_insert(cdata->kbds, res);
+	printf("seat_get_keyboard - cli=%p cdata=%p kbd=%p\n", cli, cdata, res);
 }
 
 static void seat_get_touch(struct wl_client *cli, struct wl_resource *seat,
 		uint32_t id) {
-	printf("seat_get_touch\n");
+	sys_cdata_t *cdata = find_cdata(cli);
 	struct wl_resource *res = wl_resource_create(cli, &wl_touch_interface, 3, id);
-	wl_resource_set_implementation(res, &touch_iface, NULL, NULL);
+	wl_resource_set_implementation(res, &touch_iface, cdata, touch_kill);
+	cdata->tchs = list_insert(cdata->tchs, res);
+	printf("seat_get_touch - cli=%p cdata=%p tch=%p\n", cli, cdata, res);
 }
 
 static struct wl_seat_interface seat_iface = {
@@ -347,10 +475,12 @@ static void surface_destroy(struct wl_client *cli, struct wl_resource *sfc)
 static void surface_attach(struct wl_client *cli, struct wl_resource *sfc,
 		struct wl_resource *buf, int32_t x, int32_t y)
 {
-	win_t     *win  = wl_resource_get_user_data(sfc);
-	sys_buf_t *data = wl_resource_get_user_data(buf);
-	printf("surface_attach - %p\n", data->pool->mem);
-	win->sys->buf = data;
+	win_t       *win   = wl_resource_get_user_data(sfc);
+	sys_bdata_t *bdata = wl_resource_get_user_data(buf);
+	printf("surface_attach - %p - %d,%d\n", bdata->pool->mem, x, y);
+	win->sys->buf = buf;
+	win->sys->x   = x;
+	win->sys->y   = y;
 }
 
 static void surface_damage(struct wl_client *cli, struct wl_resource *sfc,
@@ -365,7 +495,7 @@ static void surface_frame(struct wl_client *cli, struct wl_resource *sfc,
 	printf("surface_frame\n");
 	struct wl_resource *cb = wl_resource_create(cli, &wl_callback_interface, 1, id);
 	wl_resource_set_implementation(cb, NULL, NULL, NULL);
-        wl_callback_send_done(cb, time(NULL));
+        wl_callback_send_done(cb, get_time());
 }
 
 static void surface_set_opaque_region(struct wl_client *cli, struct wl_resource *sfc,
@@ -441,16 +571,17 @@ static void comp_create_surface(struct wl_client *cli, struct wl_resource *comp,
 	win_t *win = new0(win_t);
 	win->sys   = new0(win_sys_t);
 
-	printf("comp_create_surface - win=%p\n", win);
-
 	struct wl_resource *res = wl_resource_create(cli, &wl_surface_interface, 3, id);
 	wl_resource_set_implementation(res, &surface_iface, win, surface_kill);
 	wl_surface_send_enter(res, output);
 
-	win->sys->cli = cli;
-	win->sys->sfc = res;
+	win->sys->sfc   = res;
+	win->sys->cdata = find_cdata(cli);
 
 	windows = list_insert(windows, win);
+
+	printf("comp_create_surface - cli=%p win=%p cdata=%p\n",
+			cli, win, win->sys->cdata);
 }
 
 static void comp_create_region(struct wl_client *cli, struct wl_resource *comp,
@@ -558,6 +689,7 @@ static void shell_get_shell_surface(struct wl_client *cli, struct wl_resource *s
 	struct wl_resource *res = wl_resource_create(cli, &wl_shell_surface_interface, 1, id);
 	wl_resource_set_implementation(res, &ssurface_iface, win, ssurface_kill);
 
+	win->type = TYPE_NORMAL;
 	win->sys->ssfc = res;
 	wm_insert(win);
 }
@@ -594,7 +726,9 @@ static void xsurface_destroy(struct wl_client *cli, struct wl_resource *xsfc)
 static void xsurface_set_parent(struct wl_client *cli, struct wl_resource *xsfc,
 		struct wl_resource *parent)
 {
-	printf("xsurface_set_parent\n");
+	win_t *win = wl_resource_get_user_data(xsfc);
+	printf("xsurface_set_parent - %p\n", win);
+	win->type = TYPE_DIALOG;
 }
 
 static void xsurface_set_title(struct wl_client *cli, struct wl_resource *xsfc,
@@ -636,7 +770,12 @@ static void xsurface_ack_configure(struct wl_client *cli, struct wl_resource *xs
 static void xsurface_set_window_geometry(struct wl_client *cli, struct wl_resource *xsfc,
 		int32_t x, int32_t y, int32_t width, int32_t height)
 {
-	printf("xsurface_set_window_geometry\n");
+	win_t *win = wl_resource_get_user_data(xsfc);
+	printf("xsurface_set_window_geometry - %p\n", win);
+	win->sys->wx = x;
+	win->sys->wy = y;
+	win->sys->ww = width;
+	win->sys->wh = height;
 }
 
 static void xsurface_set_maximized(struct wl_client *cli, struct wl_resource *xsfc)
@@ -683,13 +822,13 @@ static struct xdg_surface_interface xsurface_iface = {
 };
 
 /* XDG Shell */
-static void xshell_use_unstable_version(struct wl_client *cli, struct wl_resource *gshell,
+static void xshell_use_unstable_version(struct wl_client *cli, struct wl_resource *xshell,
 		int32_t version)
 {
 	printf("xshell_use_unstable_version\n");
 }
 
-static void xshell_get_xdg_surface(struct wl_client *cli, struct wl_resource *gshell,
+static void xshell_get_xdg_surface(struct wl_client *cli, struct wl_resource *xshell,
 		uint32_t id, struct wl_resource *sfc)
 {
 	win_t *win = wl_resource_get_user_data(sfc);
@@ -698,11 +837,12 @@ static void xshell_get_xdg_surface(struct wl_client *cli, struct wl_resource *gs
 	struct wl_resource *res = wl_resource_create(cli, &xdg_surface_interface, 1, id);
 	wl_resource_set_implementation(res, &xsurface_iface, win, xsurface_kill);
 
+	win->type = TYPE_NORMAL;
 	win->sys->xsfc = res;
 	wm_insert(win);
 }
 
-static void xshell_get_xdg_popup(struct wl_client *cli, struct wl_resource *gshell,
+static void xshell_get_xdg_popup(struct wl_client *cli, struct wl_resource *xshell,
 		uint32_t id, struct wl_resource *sfc, struct wl_resource *parent,
 		struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y, uint32_t flags)
 {
@@ -711,7 +851,7 @@ static void xshell_get_xdg_popup(struct wl_client *cli, struct wl_resource *gshe
 	wl_resource_set_implementation(res, &xpopup_iface, NULL, NULL);
 }
 
-static void xshell_pong(struct wl_client *cli, struct wl_resource *gshell,
+static void xshell_pong(struct wl_client *cli, struct wl_resource *xshell,
 		uint32_t serial)
 {
 	printf("xshell_pong\n");
@@ -857,25 +997,102 @@ static void on_destroy(GtkWidget *widget, GdkEvent *event, gpointer user_data)
 
 static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
-	printf(g_ascii_isprint(event->keyval)
-		? "on_key: '%c'\n"
-		: "on_key: 0x%X\n",
-		event->keyval);
+	/* Handle special keys */
 	if (event->keyval == GDK_KEY_q)
 		sys_exit();
 	if (event->keyval == GDK_KEY_t)
 		g_spawn_command_line_async("st-wl", NULL);
+
+	/* Send key to wayland */
+	printf(g_ascii_isprint(event->keyval)
+		? "on_key - win=%p cdata=%p '%c'\n"
+		: "on_key - win=%p cdata=%p 0x%X\n",
+		focus, focus?focus->sys->cdata:0, event->keyval);
+	if (!focus || !focus->sys->cdata)
+		return FALSE;
+	for (list_t *cur = focus->sys->cdata->kbds; cur; cur = cur->next) {
+		uint32_t serial = get_serial();
+		uint32_t stamp  = get_time();
+		uint32_t key    = event->hardware_keycode-8;
+		uint32_t state  = event->type == GDK_KEY_PRESS
+			? WL_KEYBOARD_KEY_STATE_PRESSED
+			: WL_KEYBOARD_KEY_STATE_RELEASED;
+		wl_keyboard_send_key(cur->data, serial, stamp, key, state);
+		printf("    send -> %p tm=%d key=%d state=%d\n",
+				cur->data, stamp, key, state);
+	}
 	return TRUE;
 }
 
 static gboolean on_button(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
 {
-	printf("on_button\n");
+	win_t *win = find_win(event->x, event->y);
+	printf("on_button - win=%p cdata=%p\n",
+			win, win?win->sys->cdata:0);
+	if (!win || !win->sys->cdata)
+		return FALSE;
+	for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next) {
+		uint32_t serial = get_serial();
+		uint32_t stamp  = get_time();
+		uint32_t button = BTN_MOUSE+(event->button-1);
+		uint32_t state  = event->type == GDK_BUTTON_PRESS
+			? WL_POINTER_BUTTON_STATE_PRESSED
+			: WL_POINTER_BUTTON_STATE_RELEASED;
+		wl_pointer_send_button(cur->data, serial, stamp, button, state);
+		printf("    send -> %p tm=%d btn=%d state=%d\n",
+				cur->data, stamp, button, state);
+	}
 	return TRUE;
 }
 
 static gboolean on_move(GtkWidget *widget, GdkEventMotion *event, gpointer user_data)
 {
+	win_t *win = find_win(event->x, event->y);
+	if (!win)
+		return FALSE;
+
+	/* Keys */
+	static struct wl_array keys;
+
+	/* Queue draw event for cursor */
+	gtk_widget_queue_draw(screen);
+
+	/* Save cursor position */
+	cursor_x = event->x;
+	cursor_y = event->y;
+
+	/* Create event */
+	wl_fixed_t x = wl_fixed_from_double(event->x - win->x);
+	wl_fixed_t y = wl_fixed_from_double(event->y - win->y);
+
+	/* No focus change */
+	if (win == focus && win->sys->cdata) {
+		uint32_t t = get_time();
+		for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next)
+			wl_pointer_send_motion(cur->data, t, x, y);
+		return TRUE;
+	}
+
+	/* Send leave event */
+	uint32_t s = get_serial();
+	if  (focus && focus->sys->sfc && focus->sys->cdata) {
+		printf("on_move - leave win=%p\n", focus);
+		for (list_t *cur = focus->sys->cdata->ptrs; cur; cur = cur->next)
+			wl_pointer_send_leave(cur->data, s, focus->sys->sfc);
+		for (list_t *cur = focus->sys->cdata->kbds; cur; cur = cur->next)
+			wl_keyboard_send_leave(cur->data, s, focus->sys->sfc);
+	}
+	if  (win && win->sys->sfc && win->sys->cdata) {
+		for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next) {
+			printf("on_move - enter win=%p ptr=%p\n", win, cur->data);
+			wl_pointer_send_enter(cur->data, s, win->sys->sfc, x, y);
+		}
+		for (list_t *cur = win->sys->cdata->kbds; cur; cur = cur->next) {
+			printf("on_move - enter win=%p kbd=%p\n", win, cur->data);
+			wl_keyboard_send_enter(cur->data, s, win->sys->sfc, &keys);
+		}
+	}
+	focus = win;
 	return TRUE;
 }
 
@@ -892,15 +1109,33 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 
 	wm_update(); // Hacks for now
 
+	/* Draw windows bottom up */
 	list_t *bottom = list_last(windows);
 	for (list_t *cur = bottom; cur; cur = cur->prev) {
-		win_t     *win = cur->data;
-		sys_buf_t *buf = win->sys->buf;
-		if (buf == NULL)
+		win_t       *win   = cur->data;
+		if (win->sys->buf == NULL)
 			continue;
-		printf("    win = %p", win);
-		cairo_surface_mark_dirty(buf->surface);
-		cairo_set_source_surface(cairo, buf->surface, win->x, win->y);
+		if (win->type == TYPE_CURSOR)
+			continue;
+		sys_bdata_t *bdata = wl_resource_get_user_data(win->sys->buf);
+		int x = win->type == TYPE_NORMAL ? win->x : win->sys->x;
+		int y = win->type == TYPE_NORMAL ? win->y : win->sys->y;
+		if (win->sys->wx) x -= win->sys->wx;
+		if (win->sys->wy) y -= win->sys->wy;
+		printf("    win = %p\n", win);
+		cairo_surface_mark_dirty(bdata->surface);
+		cairo_set_source_surface(cairo, bdata->surface, x, y);
+		cairo_paint(cairo);
+		//wl_buffer_send_release(win->sys->buf);
+		//win->sys->buf = 0;
+	}
+
+	/* Draw cursor */
+	if (cursor && cursor->sys->buf) {
+		int x = cursor_x, y = cursor_y;
+		sys_bdata_t *bdata = wl_resource_get_user_data(cursor->sys->buf);
+		cairo_surface_mark_dirty(bdata->surface);
+		cairo_set_source_surface(cairo, bdata->surface, x, y);
 		cairo_paint(cairo);
 	}
 
@@ -920,10 +1155,23 @@ static gboolean on_wayland(gpointer user_data)
  ********************/
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
+	static uint32_t        active;
 	static struct wl_array states;
+	if (!active) {
+		active = XDG_SURFACE_STATE_ACTIVATED;
+		wl_array_init(&states);
+		uint32_t *ptr = wl_array_add(&states, sizeof(active));
+		if (ptr)
+			*ptr = active;
+	}
 
 	printf("sys_move: %p - %d,%d  %dx%d\n",
 			win, x, y, w, h);
+
+	if (win->x == x && win->y == y &&
+	    win->w == w && win->h == h)
+	    	return;
+
 	win->x = x;
 	win->y = y;
 	win->w = w;
@@ -935,7 +1183,7 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 
 	if (win->sys->xsfc)
 		xdg_surface_send_configure(win->sys->xsfc,
-				w, h, &states, 0);
+				w, h, &states, get_serial());
 }
 
 void sys_raise(win_t *win)
@@ -1011,12 +1259,14 @@ win_t *sys_init(void)
 			GDK_BUTTON_PRESS_MASK |
 			GDK_BUTTON_RELEASE_MASK |
 			GDK_POINTER_MOTION_MASK);
-	g_signal_connect(screen, "destroy",             G_CALLBACK(on_destroy), NULL);
-	g_signal_connect(screen, "key-press-event",     G_CALLBACK(on_key),     NULL);
-	g_signal_connect(screen, "button-press-event",  G_CALLBACK(on_button),  NULL);
-	g_signal_connect(screen, "motion-notify-event", G_CALLBACK(on_move),    NULL);
-	g_signal_connect(screen, "size-allocate",       G_CALLBACK(on_size),    NULL);
-	g_signal_connect(screen, "draw",                G_CALLBACK(on_draw),    NULL);
+	g_signal_connect(screen, "destroy",              G_CALLBACK(on_destroy), NULL);
+	g_signal_connect(screen, "key-press-event",      G_CALLBACK(on_key),     NULL);
+	g_signal_connect(screen, "key-release-event",    G_CALLBACK(on_key),     NULL);
+	g_signal_connect(screen, "button-press-event",   G_CALLBACK(on_button),  NULL);
+	g_signal_connect(screen, "button-release-event", G_CALLBACK(on_button),  NULL);
+	g_signal_connect(screen, "motion-notify-event",  G_CALLBACK(on_move),    NULL);
+	g_signal_connect(screen, "size-allocate",        G_CALLBACK(on_size),    NULL);
+	g_signal_connect(screen, "draw",                 G_CALLBACK(on_draw),    NULL);
 	g_timeout_add(1000/60, on_wayland, NULL);
 	gtk_widget_show(screen);
 

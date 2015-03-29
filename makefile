@@ -34,7 +34,7 @@ HEADERS   += $(addsuffix -client-protocol.h,$(PROTOCOL))
 HEADERS   += $(addsuffix -server-protocol.h,$(PROTOCOL))
 OBJECTS   += $(addsuffix -protocol.o,$(PROTOCOL))
 
-sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-3.0)
+sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 libevdev)
 wmpus:     LDFLAGS += $(shell pkg-config --libs   gtk+-3.0)
 endif
 
