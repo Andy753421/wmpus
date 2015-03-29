@@ -33,6 +33,7 @@ typedef enum {
 	TYPE_NORMAL,
 	TYPE_DIALOG,
 	TYPE_TOOLBAR,
+	TYPE_POPUP,
 	TYPE_CURSOR,
 } type_t;
 

@@ -728,7 +728,7 @@ static void xsurface_set_parent(struct wl_client *cli, struct wl_resource *xsfc,
 {
 	win_t *win = wl_resource_get_user_data(xsfc);
 	printf("xsurface_set_parent - %p\n", win);
-	win->type = TYPE_DIALOG;
+	//win->type = TYPE_DIALOG;
 }
 
 static void xsurface_set_title(struct wl_client *cli, struct wl_resource *xsfc,
@@ -846,9 +846,17 @@ static void xshell_get_xdg_popup(struct wl_client *cli, struct wl_resource *xshe
 		uint32_t id, struct wl_resource *sfc, struct wl_resource *parent,
 		struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y, uint32_t flags)
 {
-	printf("xshell_get_xdg_popup\n");
+	win_t *win = wl_resource_get_user_data(sfc);
+	printf("xshell_get_xdg_popup - %p @ %d,%d\n", win, x, y);
+
 	struct wl_resource *res = wl_resource_create(cli, &xdg_popup_interface, 1, id);
-	wl_resource_set_implementation(res, &xpopup_iface, NULL, NULL);
+	wl_resource_set_implementation(res, &xpopup_iface, win, NULL);
+
+	win_t *par  = wl_resource_get_user_data(parent);
+	win->type   = TYPE_POPUP;
+	win->parent = par;
+	win->x      = x;
+	win->y      = y;
 }
 
 static void xshell_pong(struct wl_client *cli, struct wl_resource *xshell,
@@ -1118,11 +1126,16 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 		if (win->type == TYPE_CURSOR)
 			continue;
 		sys_bdata_t *bdata = wl_resource_get_user_data(win->sys->buf);
-		int x = win->type == TYPE_NORMAL ? win->x : win->sys->x;
-		int y = win->type == TYPE_NORMAL ? win->y : win->sys->y;
-		if (win->sys->wx) x -= win->sys->wx;
-		if (win->sys->wy) y -= win->sys->wy;
-		printf("    win = %p\n", win);
+		int x = win->x;
+		int y = win->y;
+		if (win->type == TYPE_POPUP && win->parent) {
+			x += win->parent->x;
+			y += win->parent->y;
+		}
+		//if (win->sys->wx) x -= win->sys->wx;
+		//if (win->sys->wy) y -= win->sys->wy;
+		printf("    win = %p %dx%d @ %d,%d\n",
+				win, win->w, win->h, x, y);
 		cairo_surface_mark_dirty(bdata->surface);
 		cairo_set_source_surface(cairo, bdata->surface, x, y);
 		cairo_paint(cairo);
