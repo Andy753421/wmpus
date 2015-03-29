@@ -37,11 +37,7 @@
 #include "gtk-shell-client-protocol.h"
 #include "gtk-shell-server-protocol.h"
 
-/* Internal structures */
-struct win_sys {
-	win_t *win;
-};
-
+/* Wayland user data */
 typedef struct {
 	uint8_t *mem;
 	size_t   size;
@@ -53,17 +49,20 @@ typedef struct {
 	cairo_surface_t *surface;
 } sys_buf_t;
 
-struct wl_resource *output;
-
-sys_pool_t *gdata[10];
-int         gidx;
+/* Internal structures */
+struct win_sys {
+	struct wl_client   *cli;
+	struct wl_resource *sfc;
+	sys_buf_t          *buf;
+};
 
 /* Global data */
+static GtkWidget            *screen;
+static list_t               *windows;
+
+static struct wl_resource   *output;
 static struct wl_display    *display;
 static struct wl_event_loop *events;
-
-static GtkWidget            *window;
-static sys_buf_t            *buffer;
 
 /*****************
  * Gtk Callbacks *
@@ -103,15 +102,17 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 {
 	printf("on_draw\n");
 
-	if (buffer) {
-		cairo_surface_mark_dirty(buffer->surface);
-		cairo_set_source_surface(cairo, buffer->surface, 10, 10);
+	list_t *bottom = list_last(windows);
+	for (list_t *cur = bottom; cur; cur = cur->prev) {
+		win_t     *win = cur->data;
+		sys_buf_t *buf = win->sys->buf;
+		if (buf == NULL)
+			continue;
+		printf("    win = %p", win);
+		cairo_surface_mark_dirty(buf->surface);
+		cairo_set_source_surface(cairo, buf->surface, 10, 10);
 		cairo_paint(cairo);
 	}
-
-	cairo_set_source_rgb(cairo, 1, 1, 1);
-	cairo_arc(cairo, 150, 150, 50, 0, 2*G_PI);
-	cairo_fill(cairo);
 
 	return TRUE;
 }
@@ -191,7 +192,6 @@ static void pool_resize(struct wl_client *cli, struct wl_resource *pool,
 	}
 	data->mem  = ptr;
 	data->size = size;
-	gdata[gidx++] = data;
 }
 
 static struct wl_shm_pool_interface pool_iface = {
@@ -214,7 +214,6 @@ static void shm_create_pool(struct wl_client *cli, struct wl_resource *shm,
 
 	data->mem  = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
 	data->size = size;
-	gdata[gidx++] = data;
 }
 
 static struct wl_shm_interface shm_iface = {
@@ -298,19 +297,19 @@ static struct wl_seat_interface seat_iface = {
  *****************************************/
 
 /* Data Offer */
-static void doff_accept(struct wl_client *cli, struct wl_resource *res,
+static void doff_accept(struct wl_client *cli, struct wl_resource *doff,
 	       uint32_t serial, const char *mime_type)
 {
 	printf("doff_accept\n");
 }
 
-static void doff_receive(struct wl_client *cli, struct wl_resource *res,
+static void doff_receive(struct wl_client *cli, struct wl_resource *doff,
 		const char *mime_type, int32_t fd)
 {
 	printf("doff_receive\n");
 }
 
-static void doff_destroy(struct wl_client *cli, struct wl_resource *res)
+static void doff_destroy(struct wl_client *cli, struct wl_resource *doff)
 {
 	printf("doff_destroy\n");
 }
@@ -322,14 +321,14 @@ static struct wl_data_offer_interface doff_iface = {
 };
 
 /* Data Source */
-static void dsrc_offer(struct wl_client *cli, struct wl_resource *res,
+static void dsrc_offer(struct wl_client *cli, struct wl_resource *dsrc,
 	      const char *mime_type)
 {
 	(void)doff_iface;
 	printf("dsrc_offer\n");
 }
 
-static void dsrc_destroy(struct wl_client *cli, struct wl_resource *res)
+static void dsrc_destroy(struct wl_client *cli, struct wl_resource *dsrc)
 {
 	printf("dsrc_destroy\n");
 }
@@ -340,14 +339,14 @@ static struct wl_data_source_interface dsrc_iface = {
 };
 
 /* Data Device */
-static void ddev_start_drag(struct wl_client *cli, struct wl_resource *res,
+static void ddev_start_drag(struct wl_client *cli, struct wl_resource *dsrc,
 		   struct wl_resource *source, struct wl_resource *origin,
 		   struct wl_resource *icon, uint32_t serial)
 {
 	printf("start_drag\n");
 }
 
-static void ddev_set_selection(struct wl_client *cli, struct wl_resource *res,
+static void ddev_set_selection(struct wl_client *cli, struct wl_resource *dsrc,
 		      struct wl_resource *source, uint32_t serial)
 {
 	printf("set_selection\n");
@@ -384,66 +383,74 @@ static struct wl_data_device_manager_interface ddm_iface = {
  * Wayland Shell/Compositor Interface *
  **************************************/
 
-/* Callback */
-static void frame_callback(struct wl_resource *res)
+/* Surface */
+static void surface_kill(struct wl_resource *sfc)
 {
-	printf("frame_callback\n");
+	printf("surface_kill\n");
+	list_t *link = wl_resource_get_user_data(sfc);
+	win_t  *win  = link->data;
+	free(win->sys);
+	free(win);
+	windows = list_remove(windows, link, 0);
+	gtk_widget_queue_draw(screen);
 }
 
-/* Surface */
-static void surface_destroy(struct wl_client *cli, struct wl_resource *res)
+static void surface_destroy(struct wl_client *cli, struct wl_resource *sfc)
 {
 	printf("surface_destroy\n");
+	surface_kill(sfc);
 }
 
-static void surface_attach(struct wl_client *cli, struct wl_resource *res,
+static void surface_attach(struct wl_client *cli, struct wl_resource *sfc,
 		struct wl_resource *buf, int32_t x, int32_t y)
 {
+	list_t    *link = wl_resource_get_user_data(sfc);
 	sys_buf_t *data = wl_resource_get_user_data(buf);
+	win_t     *win  = link->data;
 	printf("surface_attach - %p\n", data->pool->mem);
-	buffer = data;
+	win->sys->buf = data;
 }
 
-static void surface_damage(struct wl_client *cli, struct wl_resource *res,
+static void surface_damage(struct wl_client *cli, struct wl_resource *sfc,
                    int32_t x, int32_t y, int32_t width, int32_t height)
 {
 	printf("surface_damage\n");
 }
 
-static void surface_frame(struct wl_client *cli, struct wl_resource *res,
+static void surface_frame(struct wl_client *cli, struct wl_resource *sfc,
 		uint32_t id)
 {
 	printf("surface_frame\n");
 	struct wl_resource *cb = wl_resource_create(cli, &wl_callback_interface, 1, id);
-	wl_resource_set_implementation(cb, NULL, NULL, &frame_callback);
+	wl_resource_set_implementation(cb, NULL, NULL, NULL);
         wl_callback_send_done(cb, time(NULL));
 }
 
-static void surface_set_opaque_region(struct wl_client *cli, struct wl_resource *res,
+static void surface_set_opaque_region(struct wl_client *cli, struct wl_resource *sfc,
 		struct wl_resource *reg)
 {
 	printf("surface_set_opaque_region\n");
 }
 
-static void surface_set_input_region(struct wl_client *cli, struct wl_resource *res,
+static void surface_set_input_region(struct wl_client *cli, struct wl_resource *sfc,
 		struct wl_resource *reg)
 {
 	printf("surface_set_input_region\n");
 }
 
-static void surface_commit(struct wl_client *cli, struct wl_resource *res)
+static void surface_commit(struct wl_client *cli, struct wl_resource *sfc)
 {
 	printf("surface_commit\n");
-	gtk_widget_queue_draw(window);
+	gtk_widget_queue_draw(screen);
 }
 
-static void surface_set_buffer_transform(struct wl_client *cli, struct wl_resource *res,
+static void surface_set_buffer_transform(struct wl_client *cli, struct wl_resource *sfc,
 		int32_t transform)
 {
 	printf("surface_set_buffer_transform\n");
 }
 
-static void surface_set_buffer_scale(struct wl_client *cli, struct wl_resource *res,
+static void surface_set_buffer_scale(struct wl_client *cli, struct wl_resource *sfc,
 		int32_t scale)
 {
 	printf("surface_set_buffer_scale\n");
@@ -462,18 +469,18 @@ static struct wl_surface_interface surface_iface = {
 };
 
 /* Region */
-static void region_destroy(struct wl_client *cli, struct wl_resource *res)
+static void region_destroy(struct wl_client *cli, struct wl_resource *reg)
 {
 	printf("region_destroy\n");
 }
 
-static void region_add(struct wl_client *cli, struct wl_resource *res,
+static void region_add(struct wl_client *cli, struct wl_resource *reg,
                 int32_t x, int32_t y, int32_t width, int32_t height)
 {
 	printf("region_add\n");
 }
 
-static void region_subtract(struct wl_client *cli, struct wl_resource *res,
+static void region_subtract(struct wl_client *cli, struct wl_resource *reg,
                      int32_t x, int32_t y, int32_t width, int32_t height)
 {
 	printf("region_subtract\n");
@@ -489,10 +496,18 @@ static struct wl_region_interface region_iface = {
 static void comp_create_surface(struct wl_client *cli, struct wl_resource *comp,
 		uint32_t id)
 {
-	printf("comp_create_surface\n");
+	win_t *win = new0(win_t);
+	printf("comp_create_surface - win=%p\n", win);
+
+	windows = list_insert(windows, win);
+
 	struct wl_resource *res = wl_resource_create(cli, &wl_surface_interface, 3, id);
-	wl_resource_set_implementation(res, &surface_iface, NULL, NULL);
+	wl_resource_set_implementation(res, &surface_iface, windows, surface_kill);
 	wl_surface_send_enter(res, output);
+
+	win->sys = new0(win_sys_t);
+	win->sys->cli = cli;
+	win->sys->sfc = res;
 }
 
 static void comp_create_region(struct wl_client *cli, struct wl_resource *comp,
@@ -509,61 +524,61 @@ static struct wl_compositor_interface comp_iface = {
 };
 
 /* Shell Surface */
-static void ssurface_pong(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_pong(struct wl_client *cli, struct wl_resource *ssfc,
 		uint32_t serial)
 {
 	printf("ssurface_pong\n");
 }
 
-static void ssurface_move(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_move(struct wl_client *cli, struct wl_resource *ssfc,
 		struct wl_resource *seat, uint32_t serial)
 {
 	printf("ssurface_move\n");
 }
 
-static void ssurface_resize(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_resize(struct wl_client *cli, struct wl_resource *ssfc,
 		struct wl_resource *seat, uint32_t serial, uint32_t edges)
 {
 	printf("ssurface_resize\n");
 }
 
-static void ssurface_set_toplevel(struct wl_client *cli, struct wl_resource *res)
+static void ssurface_set_toplevel(struct wl_client *cli, struct wl_resource *ssfc)
 {
 	printf("ssurface_set_toplevel\n");
 }
 
-static void ssurface_set_transient(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_set_transient(struct wl_client *cli, struct wl_resource *ssfc,
 		struct wl_resource *parent, int32_t x, int32_t y, uint32_t flags)
 {
 	printf("ssurface_set_transient\n");
 }
 
-static void ssurface_set_fullscreen(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_set_fullscreen(struct wl_client *cli, struct wl_resource *ssfc,
 		uint32_t method, uint32_t framerate, struct wl_resource *out)
 {
 	printf("ssurface_set_fullscreen\n");
 }
 
-static void ssurface_set_popup(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_set_popup(struct wl_client *cli, struct wl_resource *ssfc,
 		struct wl_resource *seat, uint32_t serial, struct wl_resource *parent,
 		int32_t x, int32_t y, uint32_t flags)
 {
 	printf("ssurface_set_popup\n");
 }
 
-static void ssurface_set_maximized(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_set_maximized(struct wl_client *cli, struct wl_resource *ssfc,
 		struct wl_resource *out)
 {
 	printf("ssurface_set_maximized\n");
 }
 
-static void ssurface_set_title(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_set_title(struct wl_client *cli, struct wl_resource *ssfc,
 		const char *title)
 {
 	printf("ssurface_set_title\n");
 }
 
-static void ssurface_set_class(struct wl_client *cli, struct wl_resource *res,
+static void ssurface_set_class(struct wl_client *cli, struct wl_resource *ssfc,
 		const char *class)
 {
 	printf("ssurface_set_class\n");
@@ -928,19 +943,19 @@ win_t *sys_init(void)
 
 	/* Setup GTK display */
 	gtk_init(&conf_argc, &conf_argv);
-	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-	gtk_widget_add_events(window,
+	screen = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	gtk_widget_add_events(screen,
 			GDK_KEY_PRESS_MASK |
 			GDK_BUTTON_PRESS_MASK |
 			GDK_BUTTON_RELEASE_MASK |
 			GDK_POINTER_MOTION_MASK);
-	g_signal_connect(window, "destroy",             G_CALLBACK(on_destroy), NULL);
-	g_signal_connect(window, "key-press-event",     G_CALLBACK(on_key),     NULL);
-	g_signal_connect(window, "button-press-event",  G_CALLBACK(on_button),  NULL);
-	g_signal_connect(window, "motion-notify-event", G_CALLBACK(on_move),    NULL);
-	g_signal_connect(window, "draw",                G_CALLBACK(on_draw),    NULL);
+	g_signal_connect(screen, "destroy",             G_CALLBACK(on_destroy), NULL);
+	g_signal_connect(screen, "key-press-event",     G_CALLBACK(on_key),     NULL);
+	g_signal_connect(screen, "button-press-event",  G_CALLBACK(on_button),  NULL);
+	g_signal_connect(screen, "motion-notify-event", G_CALLBACK(on_move),    NULL);
+	g_signal_connect(screen, "draw",                G_CALLBACK(on_draw),    NULL);
 	g_timeout_add(1000/60, on_wayland, NULL);
-	gtk_widget_show(window);
+	gtk_widget_show(screen);
 
 	return new0(win_t);
 }
