@@ -17,6 +17,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <ctype.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -73,12 +75,14 @@ struct win_sys {
 };
 
 /* Global data */
-static win_t                *root;
-static win_t                *focus;
+static win_t                *root;    // root window
+static win_t                *hover;   // window the mouse is over
+static win_t                *focus;   // focused window
+static win_t                *cursor;  // mouse cursor image
+
 static list_t               *clients; // of sys_cdata_t
 static list_t               *windows; // of win_t
 
-static win_t                *cursor;
 static double                cursor_x;
 static double                cursor_y;
 static double                cursor_dx;
@@ -90,9 +94,33 @@ static struct wl_resource   *output;
 static struct wl_display    *display;
 static struct wl_event_loop *events;
 
+static struct wl_array       keys;
+
+/* Constant data */
+static struct wl_array       xstate_normal;
+static struct wl_array       xstate_active;
+static struct wl_array       xstate_max;
+static struct wl_array       xstate_full;
+static struct wl_array       xstate_resize;
+
 /********************
  * Helper Functions *
  ********************/
+
+static void set_array(struct wl_array *array, int n, ...)
+{
+	va_list ap;
+	va_start(ap, n);
+	wl_array_init(array);
+	for (int i = 0; i < n; i++) {
+		uint32_t item = va_arg(ap, uint32_t);
+		uint32_t *ptr = wl_array_add(array, sizeof(item));
+		if (!ptr)
+			error("Unable to allocate constant");
+		*ptr = item;
+	}
+	va_end(ap);
+}
 
 static int get_serial(void)
 {
@@ -116,16 +144,47 @@ static int get_time(void)
 	return (int)(now - epoch);
 }
 
+static ptr_t get_ptr(win_t *win)
+{
+	ptr_t ptr = {
+		.rx = cursor_x,
+		.ry = cursor_y,
+	};
+	if (win) {
+		ptr.x = cursor_x - win->x;
+		ptr.y = cursor_y - win->y;
+	};
+	return ptr;
+}
+
+static mod_t get_mod(unsigned int state, int up)
+{
+	return (mod_t){
+	       .alt   = !!(state & GDK_MOD1_MASK   ),
+	       .ctrl  = !!(state & GDK_CONTROL_MASK),
+	       .shift = !!(state & GDK_SHIFT_MASK  ),
+	       .win   = !!(state & GDK_MOD4_MASK   ),
+	       .up    = up,
+	};
+}
+
 static win_t *find_win(int x, int y)
 {
-	for (list_t *cur = windows; cur; cur = cur->prev) {
+	for (list_t *cur = windows; cur; cur = cur->next) {
+		win_t *win = cur->data;
+		printf("find_win -- %p -- %4d,%-4d : %4dx%-4d\n",
+			win, win->x, win->y, win->w, win->h);
+	}
+	for (list_t *cur = windows; cur; cur = cur->next) {
 		win_t *win = cur->data;
 		int l = win->x;
 		int r = win->w + l;
 		int t = win->y;
 		int b = win->h + t;
-		if (l <= x && x <= r && t <= y && y <= b)
+		if (l <= x && x <= r && t <= y && y <= b) {
+			printf("find_win -> %p\n", win);
 			return win;
+		}
 	}
 	return NULL;
 }
@@ -457,12 +516,17 @@ static struct wl_data_device_manager_interface ddm_iface = {
 /* Surface */
 static void surface_kill(struct wl_resource *sfc)
 {
-	printf("surface_kill\n");
 	win_t  *win  = wl_resource_get_user_data(sfc);
 	list_t *link = list_find(windows, win);
+	printf("surface_kill - %p\n", win);
+	if (win == NULL)   return;
+	if (win == hover)  hover  = NULL;
+	if (win == focus)  focus  = NULL;
+	if (win == cursor) cursor = NULL;
 	free(win->sys);
 	free(win);
 	windows = list_remove(windows, link, 0);
+	wl_resource_set_user_data(sfc, NULL);
 	gtk_widget_queue_draw(screen);
 }
 
@@ -475,9 +539,8 @@ static void surface_destroy(struct wl_client *cli, struct wl_resource *sfc)
 static void surface_attach(struct wl_client *cli, struct wl_resource *sfc,
 		struct wl_resource *buf, int32_t x, int32_t y)
 {
-	win_t       *win   = wl_resource_get_user_data(sfc);
-	sys_bdata_t *bdata = wl_resource_get_user_data(buf);
-	printf("surface_attach - %p - %d,%d\n", bdata->pool->mem, x, y);
+	win_t *win = wl_resource_get_user_data(sfc);
+	printf("surface_attach - %p - %d,%d\n", buf, x, y);
 	win->sys->buf = buf;
 	win->sys->x   = x;
 	win->sys->y   = y;
@@ -713,6 +776,8 @@ static void xsurface_kill(struct wl_resource *xsfc)
 {
 	win_t *win = wl_resource_get_user_data(xsfc);
 	printf("xsurface_kill - %p\n", win);
+	if (!win)
+		return;
 	win->sys->xsfc = NULL;
 	if (!win->sys->ssfc)
 		wm_remove(win);
@@ -721,6 +786,7 @@ static void xsurface_kill(struct wl_resource *xsfc)
 static void xsurface_destroy(struct wl_client *cli, struct wl_resource *xsfc)
 {
 	printf("xsurface_destroy\n");
+	xsurface_kill(xsfc);
 }
 
 static void xsurface_set_parent(struct wl_client *cli, struct wl_resource *xsfc,
@@ -1006,18 +1072,29 @@ static void on_destroy(GtkWidget *widget, GdkEvent *event, gpointer user_data)
 static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer user_data)
 {
 	/* Handle special keys */
-	if (event->keyval == GDK_KEY_q)
-		sys_exit();
-	if (event->keyval == GDK_KEY_t)
-		g_spawn_command_line_async("st-wl", NULL);
+	if (event->state  &  GDK_CONTROL_MASK &&
+	    event->type   == GDK_KEY_PRESS    &&
+	    event->keyval == GDK_KEY_Return)
+		g_spawn_command_line_async("vte2_90", NULL);
+
+	/* Send key to WM */
+	if (focus) {
+		event_t ev  = tolower(event->keyval);
+		mod_t   mod = get_mod(event->state, event->type == GDK_KEY_RELEASE);
+		ptr_t   ptr = get_ptr(focus);
+		if (wm_handle_event(focus, ev, mod, ptr))
+			return TRUE;
+	}
+
+	/* Skip if no focused window */
+	if (!focus || !focus->sys->cdata)
+		return FALSE;
 
 	/* Send key to wayland */
 	printf(g_ascii_isprint(event->keyval)
 		? "on_key - win=%p cdata=%p '%c'\n"
 		: "on_key - win=%p cdata=%p 0x%X\n",
 		focus, focus?focus->sys->cdata:0, event->keyval);
-	if (!focus || !focus->sys->cdata)
-		return FALSE;
 	for (list_t *cur = focus->sys->cdata->kbds; cur; cur = cur->next) {
 		uint32_t serial = get_serial();
 		uint32_t stamp  = get_time();
@@ -1059,9 +1136,6 @@ static gboolean on_move(GtkWidget *widget, GdkEventMotion *event, gpointer user_
 	if (!win)
 		return FALSE;
 
-	/* Keys */
-	static struct wl_array keys;
-
 	/* Queue draw event for cursor */
 	gtk_widget_queue_draw(screen);
 
@@ -1069,38 +1143,23 @@ static gboolean on_move(GtkWidget *widget, GdkEventMotion *event, gpointer user_
 	cursor_x = event->x;
 	cursor_y = event->y;
 
-	/* Create event */
-	wl_fixed_t x = wl_fixed_from_double(event->x - win->x);
-	wl_fixed_t y = wl_fixed_from_double(event->y - win->y);
+	/* Send enter/leave */
+	if (win != hover) {
+		wm_handle_event(hover, EV_LEAVE, MOD(), PTR());
+		wm_handle_event(win,   EV_ENTER, MOD(), PTR());
+		hover = win;
+	}
 
-	/* No focus change */
-	if (win == focus && win->sys->cdata) {
-		uint32_t t = get_time();
-		for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next)
-			wl_pointer_send_motion(cur->data, t, x, y);
+	/* Sent pointer to WM */
+	if (wm_handle_ptr(win, get_ptr(win)))
 		return TRUE;
-	}
 
-	/* Send leave event */
-	uint32_t s = get_serial();
-	if  (focus && focus->sys->sfc && focus->sys->cdata) {
-		printf("on_move - leave win=%p\n", focus);
-		for (list_t *cur = focus->sys->cdata->ptrs; cur; cur = cur->next)
-			wl_pointer_send_leave(cur->data, s, focus->sys->sfc);
-		for (list_t *cur = focus->sys->cdata->kbds; cur; cur = cur->next)
-			wl_keyboard_send_leave(cur->data, s, focus->sys->sfc);
-	}
-	if  (win && win->sys->sfc && win->sys->cdata) {
-		for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next) {
-			printf("on_move - enter win=%p ptr=%p\n", win, cur->data);
-			wl_pointer_send_enter(cur->data, s, win->sys->sfc, x, y);
-		}
-		for (list_t *cur = win->sys->cdata->kbds; cur; cur = cur->next) {
-			printf("on_move - enter win=%p kbd=%p\n", win, cur->data);
-			wl_keyboard_send_enter(cur->data, s, win->sys->sfc, &keys);
-		}
-	}
-	focus = win;
+	/* Send motion event to window */
+	uint32_t   t = get_time();
+	wl_fixed_t x = wl_fixed_from_double(cursor_x - win->x);
+	wl_fixed_t y = wl_fixed_from_double(cursor_y - win->y);
+	for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next)
+		wl_pointer_send_motion(cur->data, t, x, y);
 	return TRUE;
 }
 
@@ -1115,7 +1174,7 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 {
 	printf("on_draw\n");
 
-	wm_update(); // Hacks for now
+	//wm_update(); // Hacks for now
 
 	/* Draw windows bottom up */
 	list_t *bottom = list_last(windows);
@@ -1168,22 +1227,11 @@ static gboolean on_wayland(gpointer user_data)
  ********************/
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
-	static uint32_t        active;
-	static struct wl_array states;
-	if (!active) {
-		active = XDG_SURFACE_STATE_ACTIVATED;
-		wl_array_init(&states);
-		uint32_t *ptr = wl_array_add(&states, sizeof(active));
-		if (ptr)
-			*ptr = active;
-	}
-
-	printf("sys_move: %p - %d,%d  %dx%d\n",
-			win, x, y, w, h);
-
 	if (win->x == x && win->y == y &&
 	    win->w == w && win->h == h)
 	    	return;
+	printf("sys_move: %p - %d,%d  %dx%d\n",
+			win, x, y, w, h);
 
 	win->x = x;
 	win->y = y;
@@ -1195,8 +1243,11 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 				WL_SHELL_SURFACE_RESIZE_NONE, w, h);
 
 	if (win->sys->xsfc)
-		xdg_surface_send_configure(win->sys->xsfc,
-				w, h, &states, get_serial());
+		xdg_surface_send_configure(win->sys->xsfc, w, h,
+				(win == focus) ? &xstate_active : &xstate_normal,
+				get_serial());
+
+	gtk_widget_queue_draw(screen);
 }
 
 void sys_raise(win_t *win)
@@ -1206,7 +1257,37 @@ void sys_raise(win_t *win)
 
 void sys_focus(win_t *win)
 {
+	if (win == focus)
+		return;
 	printf("sys_focus: %p\n", win);
+
+	/* Send leave event */
+	uint32_t   s = get_serial();
+	wl_fixed_t x = wl_fixed_from_double(cursor_x - win->x);
+	wl_fixed_t y = wl_fixed_from_double(cursor_y - win->y);
+	if  (focus && focus->sys->sfc && focus->sys->cdata) {
+		printf("sys_focus - leave win=%p\n", focus);
+		for (list_t *cur = focus->sys->cdata->ptrs; cur; cur = cur->next)
+			wl_pointer_send_leave(cur->data, s, focus->sys->sfc);
+		for (list_t *cur = focus->sys->cdata->kbds; cur; cur = cur->next)
+			wl_keyboard_send_leave(cur->data, s, focus->sys->sfc);
+		if (focus->sys->xsfc)
+			xdg_surface_send_configure(focus->sys->xsfc, focus->w, focus->h,
+					&xstate_normal, get_serial());
+	}
+	if  (win && win->sys->sfc && win->sys->cdata) {
+		printf("sys_focus - enter win=%p\n", win);
+		for (list_t *cur = win->sys->cdata->ptrs; cur; cur = cur->next)
+			wl_pointer_send_enter(cur->data, s, win->sys->sfc, x, y);
+		for (list_t *cur = win->sys->cdata->kbds; cur; cur = cur->next)
+			wl_keyboard_send_enter(cur->data, s, win->sys->sfc, &keys);
+		if (win->sys->xsfc)
+			xdg_surface_send_configure(win->sys->xsfc, win->w, win->h,
+					&xstate_active, get_serial());
+	}
+
+	/* Update focused window */
+	focus = win;
 }
 
 void sys_show(win_t *win, state_t state)
@@ -1242,6 +1323,20 @@ win_t *sys_init(void)
 	root->y = 0;
 	root->w = 800;
 	root->h = 600;
+
+	/* Initalize constants */
+	set_array(&xstate_normal, 0);
+	set_array(&xstate_active, 1,
+		XDG_SURFACE_STATE_ACTIVATED);
+	set_array(&xstate_max,2,
+		XDG_SURFACE_STATE_ACTIVATED,
+		XDG_SURFACE_STATE_MAXIMIZED);
+	set_array(&xstate_full, 2,
+		XDG_SURFACE_STATE_ACTIVATED,
+		XDG_SURFACE_STATE_FULLSCREEN);
+	set_array(&xstate_resize, 2,
+		XDG_SURFACE_STATE_ACTIVATED,
+		XDG_SURFACE_STATE_RESIZING);
 
 	/* Register log handler */
 	wl_log_set_handler_server((wl_log_func_t)vprintf);
@@ -1282,6 +1377,9 @@ win_t *sys_init(void)
 	g_signal_connect(screen, "draw",                 G_CALLBACK(on_draw),    NULL);
 	g_timeout_add(1000/60, on_wayland, NULL);
 	gtk_widget_show(screen);
+
+	/* Setup environment */
+	setenv("GDK_BACKEND", "wayland", 1);
 
 	return root;
 }
