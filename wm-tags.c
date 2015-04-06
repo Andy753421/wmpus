@@ -18,6 +18,7 @@
 #include <stdio.h>
 
 #include "util.h"
+#include "types.h"
 #include "sys.h"
 #include "wm.h"
 

@@ -26,6 +26,7 @@
 
 #include "util.h"
 #include "conf.h"
+#include "types.h"
 #include "sys.h"
 #include "wm.h"
 
