@@ -14,6 +14,7 @@
  */
 
 #define _GNU_SOURCE
+#define WL_HIDE_DEPRECATED
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,20 +26,25 @@
 
 #include <libevdev/libevdev.h>
 #include <xkbcommon/xkbcommon.h>
+
+#include <gtk/gtk.h>
+
 #include <wayland-server.h>
 #include <wayland-client.h>
 
-#include <gtk/gtk.h>
+#include "protocol/wayland-server-protocol.h"
+#include "protocol/wayland-client-protocol.h"
+#include "protocol/xdg-shell-client-protocol.h"
+#include "protocol/xdg-shell-server-protocol.h"
+#include "protocol/gtk-shell-client-protocol.h"
+#include "protocol/gtk-shell-server-protocol.h"
+#include "protocol/drm-server-protocol.h"
+#include "protocol/drm-client-protocol.h"
 
 #include "util.h"
 #include "conf.h"
 #include "sys.h"
 #include "wm.h"
-
-#include "xdg-shell-client-protocol.h"
-#include "xdg-shell-server-protocol.h"
-#include "gtk-shell-client-protocol.h"
-#include "gtk-shell-server-protocol.h"
 
 /* Window Managers calls */
 void wm_update(void);
@@ -321,11 +327,16 @@ static void pointer_set_cursor(struct wl_client *cli, struct wl_resource *ptr,
 			   int32_t hotspot_x, int32_t hotspot_y)
 {
 	printf("pointer_set_cursor %d,%d\n", hotspot_x, hotspot_y);
-	win_t *win = wl_resource_get_user_data(sfc);
-	win->type = TYPE_CURSOR;
-	cursor_dx = hotspot_x;
-	cursor_dy = hotspot_y;
-	cursor    = win;
+	if (sfc) {
+		cursor       = wl_resource_get_user_data(sfc);
+		cursor_dx    = hotspot_x;
+		cursor_dy    = hotspot_y;
+		cursor->type = TYPE_CURSOR;
+	} else {
+		cursor       = NULL;
+		cursor_dx    = 0;
+		cursor_dy    = 0;
+	}
 }
 
 static void pointer_release(struct wl_client *cli, struct wl_resource *ptr)

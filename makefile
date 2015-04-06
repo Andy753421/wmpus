@@ -29,10 +29,10 @@ GCC       ?= gcc
 PROG      ?= wmpus
 LDFLAGS   += -lwayland-client -lwayland-server
 
-PROTOCOL  ?= gtk-shell xdg-shell
-HEADERS   += $(addsuffix -client-protocol.h,$(PROTOCOL))
-HEADERS   += $(addsuffix -server-protocol.h,$(PROTOCOL))
-OBJECTS   += $(addsuffix -protocol.o,$(PROTOCOL))
+PROTOCOL  ?= wayland gtk-shell xdg-shell drm
+HEADERS   += ${PROTOCOL:%=protocol/%-client-protocol.h}
+HEADERS   += ${PROTOCOL:%=protocol/%-server-protocol.h}
+OBJECTS   += ${PROTOCOL:%=protocol/%-protocol.o}
 
 sys-xwl.o: CFLAGS  += $(shell pkg-config --cflags gtk+-3.0 libevdev)
 wmpus:     LDFLAGS += $(shell pkg-config --libs   gtk+-3.0)
@@ -60,7 +60,7 @@ endif
 all: $(HEADERS) $(PROG)
 
 clean:
-	rm -f wmpus *.exe *.o *-protocol.[ch]
+	rm -f wmpus *.exe *.o protocol/*.[cho]
 
 dist:
 	tar -czf wmpus-$(VERSION).tar.gz --transform s::wmpus-$(VERSION)/: \
