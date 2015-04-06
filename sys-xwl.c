@@ -772,6 +772,10 @@ static struct wl_shell_interface shell_iface = {
 	.get_shell_surface = shell_get_shell_surface,
 };
 
+/***********************
+ * XDG Shell Extension *
+ ***********************/
+
 /* XDG Popup */
 static void xpopup_destroy(struct wl_client *cli, struct wl_resource *xpopup)
 {
@@ -949,6 +953,10 @@ static struct xdg_shell_interface xshell_iface = {
 	.pong                 = xshell_pong,
 };
 
+/***********************
+ * GTK Shell Extension *
+ ***********************/
+
 /* GTK Surface */
 static void gsurface_set_dbus_properties(struct wl_client *cli, struct wl_resource *gsfc,
 			    const char *application_id, const char *app_menu_path,
@@ -975,6 +983,46 @@ static struct gtk_shell_interface gshell_iface = {
 	.get_gtk_surface = gshell_get_gtk_surface,
 };
 
+/****************************
+ * DRM (Xwayland) Extension *
+ ****************************/
+
+static void drm_authenticate(struct wl_client *cli, struct wl_resource *drm,
+		uint32_t id)
+{
+	printf("drm_authenticate\n");
+}
+
+static void drm_create_buffer(struct wl_client *cli, struct wl_resource *drm,
+		uint32_t id, uint32_t name, int32_t width, int32_t height,
+		uint32_t stride, uint32_t format)
+{
+	printf("drm_create_buffer\n");
+}
+
+static void drm_create_planar_buffer(struct wl_client *cli, struct wl_resource *drm,
+		uint32_t id, uint32_t name, int32_t width, int32_t height, uint32_t format,
+		int32_t offset0, int32_t stride0, int32_t offset1, int32_t stride1,
+		int32_t offset2, int32_t stride2)
+{
+	printf("drm_create_planar_buffer\n");
+}
+
+static void drm_create_prime_buffer(struct wl_client *cli, struct wl_resource *drm,
+		uint32_t id, int32_t name, int32_t width, int32_t height, uint32_t format,
+		int32_t offset0, int32_t stride0, int32_t offset1, int32_t stride1,
+		int32_t offset2, int32_t stride2)
+{
+	printf("drm_create_prime_buffer\n");
+}
+
+static struct wl_drm_interface drm_iface = {
+	.authenticate         = drm_authenticate,
+	.create_buffer        = drm_create_buffer,
+	.create_planar_buffer = drm_create_planar_buffer,
+	.create_prime_buffer  = drm_create_prime_buffer,
+};
+
 /*******************
  * Wayland Globals *
  *******************/
@@ -988,6 +1036,7 @@ static struct wl_global *ref_comp;
 static struct wl_global *ref_shell;
 static struct wl_global *ref_xshell;
 static struct wl_global *ref_gshell;
+static struct wl_global *ref_drm;
 
 /* Bind functions */
 static void bind_shm(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
@@ -1068,6 +1117,13 @@ static void bind_gshell(struct wl_client *cli, void *data, uint32_t version, uin
 	printf("bind_gshell\n");
 	struct wl_resource *res = wl_resource_create(cli, &gtk_shell_interface, version, id);
 	wl_resource_set_implementation(res, &gshell_iface, NULL, NULL);
+}
+
+static void bind_drm(struct wl_client *cli, void *data, uint32_t version, uint32_t id)
+{
+	printf("bind_drm\n");
+	struct wl_resource *res = wl_resource_create(cli, &wl_drm_interface, version, id);
+	wl_resource_set_implementation(res, &drm_iface, NULL, NULL);
 }
 
 /*****************
@@ -1369,6 +1425,7 @@ win_t *sys_init(void)
 	ref_seat   = wl_global_create(display, &wl_seat_interface,                4, NULL, &bind_seat);
 	ref_xshell = wl_global_create(display, &xdg_shell_interface,              1, NULL, &bind_xshell);
 	ref_gshell = wl_global_create(display, &gtk_shell_interface,              1, NULL, &bind_gshell);
+	ref_drm    = wl_global_create(display, &wl_drm_interface,                 2, NULL, &bind_drm);
 
 	/* Setup GTK display */
 	gtk_init(&conf_argc, &conf_argv);
