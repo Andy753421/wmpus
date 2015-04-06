@@ -10,7 +10,13 @@ CFLAGS    ?= -g -Wall
 PREFIX    ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man
 
-ifeq ($(SYS),x11)
+ifeq ($(SYS),xcb)
+GCC       ?= gcc
+PROG      ?= wmpus
+LDFLAGS   += -lxcb
+endif
+
+ifeq ($(SYS),xlib)
 GCC       ?= gcc
 PROG      ?= wmpus
 LDFLAGS   += -lX11 -lXinerama
