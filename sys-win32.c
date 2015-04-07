@@ -47,7 +47,7 @@ typedef struct {
 /* Global data */
 static int     shellhookid;
 static void   *cache;
-static win_t  *root;
+static HWND    root;
 static list_t *screens;
 
 /* Conversion functions */
@@ -200,7 +200,7 @@ LRESULT CALLBACK KbdProc(int msg, WPARAM wParam, LPARAM lParam)
 			msg, wParam, lParam,
 			st->vkCode, st->scanCode, st->flags,
 			ev, mod2int(mod));
-	return wm_handle_event(win_focused() ?: root, ev, mod, getptr())
+	return wm_handle_event(win_focused(), ev, mod, getptr())
 		|| CallNextHookEx(0, msg, wParam, lParam);
 }
 
@@ -401,17 +401,16 @@ void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 	//printf("sys_unwatch: %p\n", win);
 }
 
-list_t *sys_info(win_t *win)
+list_t *sys_info(void)
 {
 	if (screens == NULL)
 		EnumDisplayMonitors(NULL, NULL, MonProc, (LPARAM)&screens);
 	return screens;
 }
 
-win_t *sys_init(void)
+void sys_init(void)
 {
 	HINSTANCE hInst = GetModuleHandle(NULL);
-	HWND      hwnd  = NULL;
 
 	/* Load configuration */
 	no_capture = conf_get_int("main.no-capture", no_capture);
@@ -432,7 +431,7 @@ win_t *sys_init(void)
         SystemParametersInfo(SPI_GETWORKAREA, 0, &rc, 0);
 
 	/* Create shell hook window */
-	if (!(hwnd = CreateWindowEx(0, "wmpus_class", "wmpus", 0,
+	if (!(root = CreateWindowEx(0, "wmpus_class", "wmpus", 0,
 			rc.left, rc.top, rc.right-rc.left, rc.bottom-rc.top,
 			HWND_MESSAGE, NULL, hInst, NULL)))
 		printf("sys_init: Error Creating Shell Hook Window - %lu\n", GetLastError());
@@ -442,7 +441,7 @@ win_t *sys_init(void)
 			GetModuleHandle("USER32.DLL"), "RegisterShellHookWindow");
 	if (!RegisterShellHookWindow)
 		printf("sys_init: Error Finding RegisterShellHookWindow - %lu\n", GetLastError());
-	if (!RegisterShellHookWindow(hwnd))
+	if (!RegisterShellHookWindow(root))
 		printf("sys_init: Error Registering ShellHook Window - %lu\n", GetLastError());
 	shellhookid = RegisterWindowMessage("SHELLHOOK");
 
@@ -452,18 +451,16 @@ win_t *sys_init(void)
 	//SetWindowsHookEx(WH_SHELL,       ShlProc, hInst, 0);
 
 	/* Alternate ways to get input */
-	//if (!RegisterHotKey(hwnd, 123, MOD_CONTROL, VK_LBUTTON))
+	//if (!RegisterHotKey(root, 123, MOD_CONTROL, VK_LBUTTON))
 	//	printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
 	//if (!RegisterHotKey(NULL, 123, MOD_CONTROL, VK_LBUTTON))
 	//	printf("sys_init: Error Registering Hotkey - %lu\n", GetLastError());
 
 	/* Capture ctrl-c and console widnow close */
 	SetConsoleCtrlHandler(CtrlProc, TRUE);
-
-	return root = win_new(hwnd,0);
 }
 
-void sys_run(win_t *root)
+void sys_run(void)
 {
 	MSG msg = {};
 	if (!no_capture)
@@ -477,10 +474,10 @@ void sys_run(win_t *root)
 
 void sys_exit(void)
 {
-	PostMessage(root->sys->hwnd, WM_QUIT, 0, 0);
+	PostMessage(root, WM_QUIT, 0, 0);
 }
 
-void sys_free(win_t *root)
+void sys_free(void)
 {
 	/* I don't really care about this
 	 * since I don't know how to use

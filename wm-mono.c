@@ -89,16 +89,16 @@ void wm_remove(win_t *win)
 	wins = list_remove(wins, node, 0);
 }
 
-void wm_init(win_t *root)
+void wm_init(void)
 {
-	screens = sys_info(root);
-	sys_watch(root, 'j', MOD(.MODKEY=1));
-	sys_watch(root, 'k', MOD(.MODKEY=1));
-	sys_watch(root, 'c', MOD(.MODKEY=1,.shift=1));
-	sys_watch(root, 'q', MOD(.MODKEY=1,.shift=1));
+	screens = sys_info();
+	sys_watch(NULL, 'j', MOD(.MODKEY=1));
+	sys_watch(NULL, 'k', MOD(.MODKEY=1));
+	sys_watch(NULL, 'c', MOD(.MODKEY=1,.shift=1));
+	sys_watch(NULL, 'q', MOD(.MODKEY=1,.shift=1));
 }
 
-void wm_free(win_t *root)
+void wm_free(void)
 {
 	while (wins)
 		wins = list_remove(wins, wins, 0);

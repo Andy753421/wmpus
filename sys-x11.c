@@ -666,6 +666,8 @@ void sys_show(win_t *win, state_t state)
 void sys_watch(win_t *win, event_t ev, mod_t mod)
 {
 	//printf("sys_watch: %p - %x %hhx\n", win, ev, mod);
+	if (win == NULL)
+		win = root;
 	XWindowAttributes attr;
 	XGetWindowAttributes(win->sys->dpy, win->sys->xid, &attr);
 	long mask = attr.your_event_mask;
@@ -686,19 +688,21 @@ void sys_watch(win_t *win, event_t ev, mod_t mod)
 
 void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 {
+	if (win == NULL)
+		win = root;
 	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7)
 		XUngrabButton(win->sys->dpy, ev2xb(ev), mod2x(mod), win->sys->xid);
 }
 
-list_t *sys_info(win_t *win)
+list_t *sys_info(void)
 {
 	/* Use global copy of screens so we can add struts */
 	if (screens == NULL) {
 		/* Add Xinerama screens */
 		int n = 0;
 		XineramaScreenInfo *info = NULL;
-		if (XineramaIsActive(win->sys->dpy))
-			info = XineramaQueryScreens(win->sys->dpy, &n);
+		if (XineramaIsActive(root->sys->dpy))
+			info = XineramaQueryScreens(root->sys->dpy, &n);
 		for (int i = 0; i < n; i++) {
 			win_t *screen = new0(win_t);
 			screen->x = info[i].x_org;
@@ -712,13 +716,13 @@ list_t *sys_info(win_t *win)
 	if (screens == NULL) {
 		/* No xinerama support */
 		win_t *screen = new0(win_t);
-		*screen = *win;
+		*screen = *root;
 		screens = list_insert(NULL, screen);
 	}
 	return screens;
 }
 
-win_t *sys_init(void)
+void sys_init(void)
 {
 	Display *dpy;
 	Window   xid;
@@ -753,10 +757,10 @@ win_t *sys_init(void)
 	XSelectInput(dpy, xid, SubstructureRedirectMask|SubstructureNotifyMask);
 	xerrorxlib = XSetErrorHandler(xerror);
 
-	return root = win_find(dpy, xid, 1);
+	root = win_find(dpy, xid, 1);
 }
 
-void sys_run(win_t *root)
+void sys_run(void)
 {
 	/* Add each initial window */
 	if (!no_capture) {
@@ -786,7 +790,7 @@ void sys_exit(void)
 	running = 0;
 }
 
-void sys_free(win_t *root)
+void sys_free(void)
 {
 	XCloseDisplay(root->sys->dpy);
 	while (screens) {

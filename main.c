@@ -34,12 +34,12 @@ int main(int argc, char **argv)
 	signal(SIGINT, on_sigint);
 
 	conf_init(argc, argv);
-	win_t *root = sys_init();
-	wm_init(root);
+	sys_init();
+	wm_init();
 
-	sys_run(root);
+	sys_run();
 
-	wm_free(root);
-	sys_free(root);
+	wm_free();
+	sys_free();
 	return 0;
 }

@@ -47,16 +47,16 @@ void sys_unwatch(win_t *win, event_t event, mod_t mod);
 
 /* Return a list of windows representing the geometry of the
  * physical displays attached to the computer. */
-list_t *sys_info(win_t *root);
+list_t *sys_info(void);
 
 /* First call, calls wm_insert for each existing window */
-win_t *sys_init(void);
+void sys_init(void);
 
 /* Starts the main loop */
-void sys_run(win_t *root);
+void sys_run(void);
 
 /* Exit main loop */
 void sys_exit(void);
 
 /* Free all static data, for memory debugging */
-void sys_free(win_t *root);
+void sys_free(void);

@@ -38,7 +38,7 @@ void wm_insert(win_t *win);
 void wm_remove(win_t *win);
 
 /* First call, sets up key bindings, etc */
-void wm_init(win_t *root);
+void wm_init(void);
 
 /* First call, sets up key bindings, etc */
-void wm_free(win_t *root);
+void wm_free(void);

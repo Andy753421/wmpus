@@ -85,16 +85,16 @@ void wm_remove(win_t *win)
 	}
 }
 
-void wm_init(win_t *root)
+void wm_init(void)
 {
 	event_t keys[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	for (int i = 0; i < countof(keys); i++) {
-		sys_watch(root, keys[i], MOD(.MODKEY=1));
-		sys_watch(root, keys[i], MOD(.MODKEY=1,.shift=1));
+		sys_watch(NULL, keys[i], MOD(.MODKEY=1));
+		sys_watch(NULL, keys[i], MOD(.MODKEY=1,.shift=1));
 	}
 }
 
-void wm_free(win_t *root)
+void wm_free(void)
 {
 	for (int i = 0; i < 10; i++) {
 		while (tags[i]) {

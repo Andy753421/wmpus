@@ -83,7 +83,6 @@ typedef struct {
 typedef struct {
 	list_t  *tags;     // of tag_t
 	tag_t   *tag;      // focused tag
-	win_t   *root;     // root/background window
 	list_t  *screens;  // display geometry
 } wm_t;
 
@@ -212,8 +211,8 @@ static void set_mode(win_t *win, layout_t layout)
  * it as the currently focused window */
 static void set_focus(win_t *win)
 {
-	if (win == NULL || win == wm->root) {
-		sys_focus(wm->root);
+	if (win == NULL) {
+		sys_focus(NULL);
 		return;
 	}
 
@@ -503,7 +502,7 @@ static void shift_focus(int cols, int rows)
 		if (ncol && COL(ncol) && COL(ncol)->row)
 			set_focus(COL(ncol)->row->win);
 		else
-			sys_focus(wm->root);
+			sys_focus(NULL);
 	}
 }
 
@@ -715,8 +714,6 @@ void wm_update(void)
  *******************************/
 int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 {
-	if (!win || win == wm_dpy->geom)
-		return 0;
 	//printf("wm_handle_event: %p - %x %c%c%c%c%c\n", win, ev,
 	//	mod.up    ? '^' : 'v',
 	//	mod.alt   ? 'a' : '-',
@@ -725,7 +722,7 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 	//	mod.win   ? 'w' : '-');
 
 	/* Mouse events */
-	if (EV_MOUSE0 <= ev && ev <= EV_MOUSE7) {
+	if (win && EV_MOUSE0 <= ev && ev <= EV_MOUSE7) {
 		if (ev == EV_MOUSE1 && !mod.MODKEY && !mod.up)
 			return raise_float(win),         0;
 		if ((ev == EV_MOUSE3 && mod.MODKEY && !mod.up) ||
@@ -745,29 +742,33 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 		return mod.MODKEY || ev == EV_ALT;
 
 	/* Misc */
-	if (mod.MODKEY) {
 #ifdef DEBUG
+	if (win && mod.MODKEY) {
 		if (ev == EV_F1) return raise_float(win), 1;
 		if (ev == EV_F2) return set_focus(win), 1;
 		if (ev == EV_F3) return sys_show(win, ST_SHOW),  1;
 		if (ev == EV_F4) return sys_show(win, ST_HIDE),  1;
 		if (ev == EV_F7) return sys_show(win, ST_SHADE), 1;
+	}
 #endif
+	if (mod.MODKEY) {
 		if (ev == EV_F5) return wm_update(),    1;
 		if (ev == EV_F6) return print_txt(),    1;
 		if (ev == 'q')   return sys_exit(),     1;
+	}
+	if (win && mod.MODKEY) {
 		if (ev == 'f')   return wm_handle_state(win, win->state,
 			win->state == ST_FULL ? ST_SHOW : ST_FULL);
 		if (ev == 'g')   return wm_handle_state(win, win->state,
 			win->state == ST_MAX  ? ST_SHOW : ST_MAX);
 	}
-	if (mod.MODKEY && mod.shift) {
+	if (win && mod.MODKEY && mod.shift) {
 		if (ev == 'c')   return sys_show(win, ST_CLOSE), 1;
 	}
 
 	/* Floating layer */
 	if (ev == ' ') {
-		if (mod.MODKEY && mod.shift)
+		if (win && mod.MODKEY && mod.shift)
 			return set_layer(win), 1;
 		if (mod.MODKEY)
 			return switch_layer(), 1;
@@ -807,22 +808,22 @@ int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 	/* Tag switching */
 	if (mod.MODKEY && '0' <= ev && ev <= '9') {
 		char name[] = {ev, '\0'};
-		if (mod.shift)
+		if (win && mod.shift)
 			tag_set(win, name);
-		else
+		if (!mod.shift)
 			tag_switch(name);
 		wm_update();
 	}
 
 	/* Focus change */
-	if (ev == EV_ENTER && win->state != ST_SHADE)
+	if (win && ev == EV_ENTER && win->state != ST_SHADE)
 		return set_focus(win), 1;
 
 	/* Reset focus after after focus change,
 	 * not sure what is causing the focus change in the first place
 	 * but preventing that would be a better solution */
 	if (ev == EV_FOCUS)
-		sys_focus(wm_focus ?: wm->root);
+		sys_focus(wm_focus);
 
 	return mod.MODKEY;
 }
@@ -932,17 +933,16 @@ void wm_remove(win_t *win)
 	print_txt();
 }
 
-void wm_init(win_t *root)
+void wm_init(void)
 {
-	printf("wm_init: %p\n", root);
+	printf("wm_init\n");
 
 	/* Load configuration */
 	margin = conf_get_int("main.margin", margin);
 	stack  = conf_get_int("main.stack",  stack);
 
 	wm          = new0(wm_t);
-	wm->root    = root;
-	wm->screens = list_sort(sys_info(root), 0, sort_win);
+	wm->screens = list_sort(sys_info(), 0, sort_win);
 	wm->tag     = tag_new(wm->screens, "1");
 	wm->tags    = list_insert(NULL, wm->tag);
 
@@ -956,14 +956,14 @@ void wm_init(win_t *root)
 		EV_F7, EV_F8, EV_F9, EV_F10, EV_F11, EV_F12,
 		EV_MOUSE1, EV_MOUSE3};
 	for (int i = 0; i < countof(ev_e); i++)
-		sys_watch(root, ev_e[i],  MOD());
+		sys_watch(NULL, ev_e[i],  MOD());
 	for (int i = 0; i < countof(ev_m); i++)
-		sys_watch(root, ev_m[i], MOD(.MODKEY=1));
+		sys_watch(NULL, ev_m[i], MOD(.MODKEY=1));
 	for (int i = 0; i < countof(ev_s); i++)
-		sys_watch(root, ev_s[i], MOD(.MODKEY=1,.shift=1));
+		sys_watch(NULL, ev_s[i], MOD(.MODKEY=1,.shift=1));
 }
 
-void wm_free(win_t *root)
+void wm_free(void)
 {
 	/* Re-show and free all windows */
 	while ( wm->tags) { tag_t *tag =  wm->tags->data;
