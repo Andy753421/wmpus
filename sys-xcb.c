@@ -19,6 +19,7 @@
 #include <search.h>
 
 #include <xcb/xcb.h>
+#include <xcb/xinerama.h>
 
 #include "util.h"
 #include "conf.h"
@@ -135,6 +136,41 @@ static xcb_get_window_attributes_reply_t *do_get_window_attributes(xcb_window_t 
 		error("do_get_window_attributes: %d - no reply ", win);
 	printf("do_get_window_attributes: %d - %d\n",
 			win, reply->override_redirect);
+	return reply;
+}
+
+static int do_xinerama_check(void)
+{
+	const xcb_query_extension_reply_t *data =
+		xcb_get_extension_data(conn, &xcb_xinerama_id);
+	if (!data || !data->present)
+		return printf("do_xinerama_check: no ext\n"), 0;
+
+	xcb_xinerama_is_active_cookie_t cookie =
+		xcb_xinerama_is_active(conn);
+	if (!cookie.sequence)
+		return printf("do_xinerama_check: no cookie\n"), 0;
+
+	xcb_xinerama_is_active_reply_t *reply =
+		xcb_xinerama_is_active_reply(conn, cookie, NULL);
+	if (!reply)
+		printf("do_xinerama_check: no reply\n"), 0;
+	else
+		printf("do_xinerama_check: %d\n", reply->state);
+	return reply && reply->state;
+}
+
+static xcb_xinerama_query_screens_reply_t *do_query_screens(void)
+{
+	xcb_xinerama_query_screens_cookie_t cookie =
+		xcb_xinerama_query_screens(conn);
+	xcb_xinerama_query_screens_reply_t *reply =
+		xcb_xinerama_query_screens_reply(conn, cookie, NULL);
+	if (!reply)
+		printf("do_query_screens: no reply\n");
+	else
+		printf("do_query_screens: %d screens\n",
+			xcb_xinerama_query_screens_screen_info_length(reply));
 	return reply;
 }
 
@@ -293,6 +329,32 @@ void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 list_t *sys_info(void)
 {
 	printf("sys_info\n");
+
+	if (screens == NULL && do_xinerama_check()) {
+		/* Add Xinerama screens */
+		xcb_xinerama_query_screens_reply_t *query;
+		unsigned int ninfo;
+		xcb_xinerama_screen_info_t *info;
+
+		query = do_query_screens();
+		ninfo = xcb_xinerama_query_screens_screen_info_length(query);
+		info  = xcb_xinerama_query_screens_screen_info(query);
+
+		for (int i = 0; i < ninfo; i++) {
+			win_t *screen = new0(win_t);
+
+			screen->x = info[i].x_org;
+			screen->y = info[i].y_org;
+			screen->w = info[i].width;
+			screen->h = info[i].height;
+
+			screens = list_insert(NULL, screen);
+
+			printf("sys_info: xinerama screen - %dx%d @ %d,%d\n",
+					screen->w, screen->h,
+					screen->x, screen->y);
+		}
+	}
 
 	if (screens == NULL) {
 		/* No xinerama support */

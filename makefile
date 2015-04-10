@@ -13,7 +13,7 @@ MANPREFIX ?= ${PREFIX}/share/man
 ifeq ($(SYS),xcb)
 GCC       ?= gcc
 PROG      ?= wmpus
-LDFLAGS   += -lxcb
+LDFLAGS   += -lxcb -lxcb-xinerama
 endif
 
 ifeq ($(SYS),xlib)
