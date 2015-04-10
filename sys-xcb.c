@@ -96,6 +96,48 @@ static win_t *win_get(xcb_window_t xcb)
 	return *win;
 }
 
+/****************
+ * XCB Wrappers *
+ ****************/
+
+static xcb_query_tree_reply_t *do_query_tree(xcb_window_t win)
+{
+	xcb_query_tree_cookie_t cookie =
+		xcb_query_tree(conn, win);
+	xcb_query_tree_reply_t *reply =
+		xcb_query_tree_reply(conn, cookie, NULL);
+	if (!reply)
+		error("do_query_tree: %d - no reply", win);
+	printf("do_query_tree: %d\n", win);
+	return reply;
+}
+
+static xcb_get_geometry_reply_t *do_get_geometry(xcb_window_t win)
+{
+	xcb_get_geometry_cookie_t cookie =
+		xcb_get_geometry(conn, win);
+	xcb_get_geometry_reply_t *reply =
+		xcb_get_geometry_reply(conn, cookie, NULL);
+	if (!reply)
+		error("do_get_geometry: %d - no reply", win);
+	printf("do_get_geometry: %d - %dx%d @ %d,%d\n",
+			win, reply->width, reply->height, reply->x, reply->y);
+	return reply;
+}
+
+static xcb_get_window_attributes_reply_t *do_get_window_attributes(xcb_window_t win)
+{
+	xcb_get_window_attributes_cookie_t cookie =
+		xcb_get_window_attributes(conn, win);
+	xcb_get_window_attributes_reply_t *reply =
+		xcb_get_window_attributes_reply(conn, cookie, NULL);
+	if (!reply)
+		error("do_get_window_attributes: %d - no reply ", win);
+	printf("do_get_window_attributes: %d - %d\n",
+			win, reply->override_redirect);
+	return reply;
+}
+
 /**********************
  * X11 Event Handlers *
  **********************/
@@ -299,6 +341,48 @@ void sys_init(void)
 void sys_run(void)
 {
 	printf("sys_run\n");
+
+	/* Add each initial window */
+	if (!no_capture) {
+		xcb_query_tree_reply_t *tree;
+		unsigned int nkids;
+		xcb_window_t *kids;
+
+		tree  = do_query_tree(root);
+		nkids = xcb_query_tree_children_length(tree);
+		kids  = xcb_query_tree_children(tree);
+
+		for(int i = 0; i < nkids; i++) {
+			xcb_get_geometry_reply_t *geom;
+			xcb_get_window_attributes_reply_t *attr;
+
+			geom = do_get_geometry(kids[i]);
+			attr = do_get_window_attributes(kids[i]);
+
+			win_t     *win = new0(win_t);
+			win_sys_t *sys = new0(win_sys_t);
+
+			win->x        = geom->x;
+			win->y        = geom->y;
+			win->w        = geom->width;
+			win->h        = geom->height;
+			win->sys      = sys;
+
+			sys->xcb      = kids[i];
+			sys->override = attr->override_redirect;
+
+			tsearch(win, &cache, win_cmp);
+
+			if (!attr->override_redirect) {
+				wm_insert(win);
+				sys->managed = 1;
+			}
+		}
+
+		xcb_flush(conn);
+	}
+
+	/* Main loop */
 	while (1)
 	{
 		int status;
