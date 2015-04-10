@@ -295,12 +295,19 @@ list_t *sys_info(void)
 	printf("sys_info\n");
 
 	if (screens == NULL) {
+		/* No xinerama support */
+		const xcb_setup_t *setup = xcb_get_setup(conn);
+		xcb_screen_t      *geom  = xcb_setup_roots_iterator(setup).data;
+
 		win_t *screen = new0(win_t);
-		screen->x = 0;
-		screen->y = 0;
-		screen->w = 800;
-		screen->h = 600;
+
+		screen->w = geom->width_in_pixels;
+		screen->h = geom->height_in_pixels;
+
 		screens = list_insert(NULL, screen);
+
+		printf("sys_info: root screen - %dx%d\n",
+				screen->w, screen->h);
 	}
 
 	return screens;
