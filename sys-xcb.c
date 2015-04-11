@@ -20,6 +20,7 @@
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_event.h>
+#include <xcb/xcb_keysyms.h>
 #include <xcb/xinerama.h>
 
 #include "util.h"
@@ -35,16 +36,117 @@ static int no_capture = 0;
 
 /* Internal structures */
 struct win_sys {
-	xcb_window_t xcb;
-	int override; // normal vs override redirect
-	int managed;  // window is currently managed by wm
+	xcb_window_t     xcb;    // xcb window id
+	xcb_event_mask_t events; // currently watch events
+	int override;            // normal vs override redirect
+	int mapped;              // window is currently mapped
 };
 
 /* Global data */
-static xcb_connection_t *conn;
-static xcb_window_t      root;
-static list_t           *screens;
-static void             *cache;
+static xcb_connection_t  *conn;
+static xcb_key_symbols_t *keysyms;
+static xcb_window_t       root;
+static xcb_event_mask_t   events;
+static list_t            *screens;
+static void              *cache;
+
+
+/************************
+ * Conversion functions *
+ ************************/
+
+/* Key presses */
+static struct {
+	event_t      ev;
+	xcb_keysym_t sym;
+} keysym_map[] = {
+	{ EV_LEFT,     0xFF51 },
+	{ EV_RIGHT,    0xFF53 },
+	{ EV_UP,       0xFF52 },
+	{ EV_DOWN,     0xFF54 },
+	{ EV_HOME,     0xFF50 },
+	{ EV_END,      0xFF57 },
+	{ EV_PAGEUP,   0xFF55 },
+	{ EV_PAGEDOWN, 0xFF56 },
+	{ EV_F1,       0xFFBE },
+	{ EV_F2,       0xFFBF },
+	{ EV_F3,       0xFFC0 },
+	{ EV_F4,       0xFFC1 },
+	{ EV_F5,       0xFFC2 },
+	{ EV_F6,       0xFFC3 },
+	{ EV_F7,       0xFFC4 },
+	{ EV_F8,       0xFFC5 },
+	{ EV_F9,       0xFFC6 },
+	{ EV_F10,      0xFFC7 },
+	{ EV_F11,      0xFFC8 },
+	{ EV_F12,      0xFFC9 },
+};
+
+static xcb_keycode_t *event_to_keycodes(event_t ev)
+{
+	xcb_keycode_t *codes = NULL;
+
+	/* Get keysym */
+	xcb_keysym_t keysym = map_get(keysym_map, ev, ev, sym, ev);
+
+	/* Get keycodes */
+	if (!(codes = xcb_key_symbols_get_keycode(keysyms, keysym)))
+		warn("no keycode found for %d->%d", ev, keysym);
+
+	return codes;
+}
+
+static event_t keycode_to_event(xcb_keycode_t code)
+{
+	/* Get keysym */
+	xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keysyms, code, 0);
+
+	/* Get event */
+	return map_get(keysym_map, sym,keysym, ev,keysym);
+}
+
+/* Button presses */
+static event_t button_to_event(xcb_button_t btn)
+{
+	return EV_MOUSE0 + btn;
+}
+
+static xcb_button_t event_to_button(event_t ev)
+{
+	return ev - EV_MOUSE0;
+}
+
+/* Modifier masks */
+static xcb_mod_mask_t mod_to_mask(mod_t mod)
+{
+	xcb_mod_mask_t mask = 0;
+	if (mod.alt)   mask |= XCB_MOD_MASK_1;
+	if (mod.ctrl)  mask |= XCB_MOD_MASK_CONTROL;
+	if (mod.shift) mask |= XCB_MOD_MASK_SHIFT;
+	if (mod.win)   mask |= XCB_MOD_MASK_4;
+	return mask;
+}
+
+static mod_t mask_to_mod(xcb_mod_mask_t mask, int up)
+{
+	mod_t mod = { .up = up };
+	if (mask & XCB_MOD_MASK_1)       mod.alt   = 1;
+	if (mask & XCB_MOD_MASK_CONTROL) mod.ctrl  = 1;
+	if (mask & XCB_MOD_MASK_SHIFT)   mod.shift = 1;
+	if (mask & XCB_MOD_MASK_4)       mod.win   = 1;
+	return mod;
+}
+
+/* Mouse pointers */
+static ptr_t list_to_ptr(int16_t *list)
+{
+	ptr_t ptr = {};
+	ptr.rx = list[0]; // root_x
+	ptr.ry = list[1]; // root_y
+	ptr.x  = list[2]; // event_x
+	ptr.y  = list[3]; // event_y
+	return ptr;
+}
 
 /********************
  * Window functions *
@@ -119,7 +221,7 @@ static int do_get_geometry(xcb_window_t win,
 }
 
 static int do_get_window_attributes(xcb_window_t win,
-		int *override)
+		int *override, int *mapped)
 {
 	xcb_get_window_attributes_cookie_t cookie =
 		xcb_get_window_attributes(conn, win);
@@ -134,6 +236,7 @@ static int do_get_window_attributes(xcb_window_t win,
 	printf("do_get_window_attributes: %d - %d\n",
 			win, reply->override_redirect);
 	*override = reply->override_redirect;
+	*mapped   = reply->map_state != XCB_MAP_STATE_UNMAPPED;
 	return 1;
 }
 
@@ -181,6 +284,53 @@ static int do_query_screens(xcb_xinerama_screen_info_t **info)
  **********************/
 
 /* Specific events */
+static void on_key_event(xcb_key_press_event_t *event, int up)
+{
+	xcb_window_t xcb = event->event == root ?
+		event->child : event->event;
+	win_t  *win = win_get(xcb);
+	event_t ev  = keycode_to_event(event->detail);
+	mod_t   mod = mask_to_mod(event->state, up);
+	ptr_t   ptr = list_to_ptr(&event->root_x);
+	printf("on_key_event:         xcb=%u -> win=%p\n", xcb, win);
+	wm_handle_event(win, ev, mod, ptr);
+}
+
+static void on_button_event(xcb_button_press_event_t *event, int up)
+{
+	xcb_window_t xcb = event->event == root ?
+		event->child : event->event;
+	win_t  *win = win_get(xcb);
+	event_t ev  = button_to_event(event->detail);
+	mod_t   mod = mask_to_mod(event->state, up);
+	ptr_t   ptr = list_to_ptr(&event->root_x);
+	printf("on_button_event:      xcb=%u -> win=%p\n", xcb, win);
+
+	if (!wm_handle_event(win, ev, mod, ptr))
+		xcb_allow_events(conn, XCB_ALLOW_REPLAY_POINTER, event->time);
+	else if (!up)
+		xcb_grab_pointer(conn, 1, xcb,
+				XCB_EVENT_MASK_POINTER_MOTION |
+				XCB_EVENT_MASK_BUTTON_RELEASE,
+				XCB_GRAB_MODE_ASYNC,
+				XCB_GRAB_MODE_ASYNC,
+				0, 0, XCB_CURRENT_TIME);
+	else
+		xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+
+}
+
+static void on_motion_notify(xcb_motion_notify_event_t *event)
+{
+	xcb_window_t xcb = event->event == root ?
+		event->child : event->event;
+	win_t *win = win_get(xcb);
+	ptr_t  ptr = list_to_ptr(&event->root_x);
+	printf("on_motion_notify:     xcb=%u -> win=%p - %d,%d / %d.%d\n", xcb, win,
+			ptr.x, ptr.y, ptr.rx, ptr.ry);
+	wm_handle_ptr(win, ptr);
+}
+
 static void on_create_notify(xcb_create_notify_event_t *event)
 {
 	win_t     *win = new0(win_t);
@@ -217,10 +367,9 @@ static void on_map_request(win_t *win, xcb_map_request_event_t *event)
 	printf("on_map_request:       xcb=%u -> win=%p\n",
 			event->window, win);
 
-	if (!win->sys->managed) {
+	if (!win->sys->override && !win->sys->mapped)
 		wm_insert(win);
-		win->sys->managed = 1;
-	}
+	win->sys->mapped = 1;
 
 	xcb_map_window(conn, win->sys->xcb);
 	sys_move(win, win->x, win->y, win->w, win->h);
@@ -257,13 +406,31 @@ static void on_configure_request(win_t *win, xcb_configure_request_event_t *even
 /* Generic Event */
 static void on_event(xcb_generic_event_t *event)
 {
-	win_t *win = NULL;
+	win_t   *win = NULL;
 
 	int type = XCB_EVENT_RESPONSE_TYPE(event);
 	int sent = XCB_EVENT_SENT(event);
 	const char *name = NULL;
 
 	switch (type) {
+		/* Input handling */
+		case XCB_KEY_PRESS:
+			on_key_event((xcb_key_press_event_t *)event, 0);
+			break;
+		case XCB_KEY_RELEASE:
+			on_key_event((xcb_key_release_event_t *)event, 1);
+			break;
+		case XCB_BUTTON_PRESS:
+			on_button_event((xcb_button_press_event_t *)event, 0);
+			break;
+		case XCB_BUTTON_RELEASE:
+			on_button_event((xcb_button_release_event_t *)event, 1);
+			break;
+		case XCB_MOTION_NOTIFY:
+			on_motion_notify((xcb_motion_notify_event_t *)event);
+			break;
+
+		/* Window management */
 		case XCB_CREATE_NOTIFY:
 			on_create_notify((xcb_create_notify_event_t *)event);
 			break;
@@ -279,6 +446,8 @@ static void on_event(xcb_generic_event_t *event)
 			if ((win = win_get(((xcb_configure_request_event_t *)event)->window)))
 				on_configure_request(win, (xcb_configure_request_event_t *)event);
 			break;
+
+		/* Unknown events */
 		default:
 			name = xcb_event_get_label(type);
 			printf("on_event: %d:%02X -> %s\n",
@@ -328,6 +497,50 @@ void sys_show(win_t *win, state_t state)
 void sys_watch(win_t *win, event_t ev, mod_t mod)
 {
 	printf("sys_watch: %p - 0x%X,0x%X\n", win, ev, mod2int(mod));
+	xcb_window_t      xcb  = win ? win->sys->xcb     : root;
+	xcb_event_mask_t *mask = win ? &win->sys->events : &events;
+	xcb_mod_mask_t    mods = 0;
+	xcb_button_t      btn  = 0;
+	xcb_keycode_t    *code = 0;
+
+	switch (ev) {
+		case EV_ENTER:
+			*mask |= XCB_EVENT_MASK_ENTER_WINDOW;
+			xcb_change_window_attributes(conn, xcb, XCB_CW_EVENT_MASK, mask);
+			break;
+
+		case EV_LEAVE:
+			*mask |= XCB_EVENT_MASK_LEAVE_WINDOW;
+			xcb_change_window_attributes(conn, xcb, XCB_CW_EVENT_MASK, mask);
+			break;
+
+		case EV_FOCUS:
+		case EV_UNFOCUS:
+			*mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
+			xcb_change_window_attributes(conn, xcb, XCB_CW_EVENT_MASK, mask);
+			break;
+
+		case EV_MOUSE0...EV_MOUSE7:
+			btn    = event_to_button(ev);
+			mods   = mod_to_mask(mod);
+			*mask |= mod.up ? XCB_EVENT_MASK_BUTTON_RELEASE
+			                : XCB_EVENT_MASK_BUTTON_PRESS;
+			xcb_grab_button(conn, 0, xcb, *mask,
+					XCB_GRAB_MODE_ASYNC,
+					XCB_GRAB_MODE_ASYNC,
+					0, 0, btn, mods);
+			break;
+
+		default:
+			code = event_to_keycodes(ev);
+			mods = mod_to_mask(mod);
+			for (int i = 0; code && code[i] != XCB_NO_SYMBOL; i++)
+				xcb_grab_key(conn, 1, xcb, mods, code[i],
+						XCB_GRAB_MODE_ASYNC,
+						XCB_GRAB_MODE_ASYNC);
+
+			break;
+	}
 }
 
 void sys_unwatch(win_t *win, event_t ev, mod_t mod)
@@ -393,21 +606,24 @@ void sys_init(void)
 	if (xcb_connection_has_error(conn))
 		error("xcb connection has errors");
 
+	/* Allocate key symbols */
+	if (!(keysyms = xcb_key_symbols_alloc(conn)))
+		error("cannot allocate key symbols");
+
 	/* Get root window */
 	const xcb_setup_t     *setup = xcb_get_setup(conn);
 	xcb_screen_iterator_t  iter  = xcb_setup_roots_iterator(setup);
 	root = iter.data->root;
 
 	/* Request substructure redirect */
-	xcb_event_mask_t     mask;
-	xcb_void_cookie_t    cookie;
+	xcb_void_cookie_t cookie;
 	xcb_generic_error_t *err;
-	mask   = XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+	events = XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
 		 XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
 	cookie = xcb_change_window_attributes_checked(conn, root,
-			XCB_CW_EVENT_MASK, &mask);
+			XCB_CW_EVENT_MASK, &events);
 	if ((err = xcb_request_check(conn, cookie)))
-		error("Another window manager is already running");
+		error("another window manager is already running");
 }
 
 void sys_run(void)
@@ -423,12 +639,11 @@ void sys_run(void)
 			win->sys = new0(win_sys_t);
 			win->sys->xcb = kids[i];
 			do_get_geometry(kids[i], &win->x, &win->y, &win->w, &win->h);
-			do_get_window_attributes(kids[i], &win->sys->override);
+			do_get_window_attributes(kids[i],
+				&win->sys->override, &win->sys->mapped);
 			tsearch(win, &cache, win_cmp);
-			if (!win->sys->override) {
+			if (!win->sys->override && win->sys->mapped)
 				wm_insert(win);
-				win->sys->managed = 1;
-			}
 		}
 		xcb_flush(conn);
 	}
