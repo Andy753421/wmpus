@@ -19,6 +19,7 @@
 #include <search.h>
 
 #include <xcb/xcb.h>
+#include <xcb/xcb_event.h>
 #include <xcb/xinerama.h>
 
 #include "util.h"
@@ -44,30 +45,6 @@ static xcb_connection_t *conn;
 static xcb_window_t      root;
 static list_t           *screens;
 static void             *cache;
-
-/*****************
- * Constant data *
- *****************/
-
-const char *event_names[] = {
-	[XCB_KEY_PRESS        ] "key_press",         [XCB_KEY_RELEASE      ] "key_release",
-	[XCB_BUTTON_PRESS     ] "button_press",      [XCB_BUTTON_RELEASE   ] "button_release",
-	[XCB_MOTION_NOTIFY    ] "motion_notify",     [XCB_ENTER_NOTIFY     ] "enter_notify",
-	[XCB_LEAVE_NOTIFY     ] "leave_notify",      [XCB_FOCUS_IN         ] "focus_in",
-	[XCB_FOCUS_OUT        ] "focus_out",         [XCB_KEYMAP_NOTIFY    ] "keymap_notify",
-	[XCB_EXPOSE           ] "expose",            [XCB_GRAPHICS_EXPOSURE] "graphics_exposure",
-	[XCB_NO_EXPOSURE      ] "no_exposure",       [XCB_VISIBILITY_NOTIFY] "visibility_notify",
-	[XCB_CREATE_NOTIFY    ] "create_notify",     [XCB_DESTROY_NOTIFY   ] "destroy_notify",
-	[XCB_UNMAP_NOTIFY     ] "unmap_notify",      [XCB_MAP_NOTIFY       ] "map_notify",
-	[XCB_MAP_REQUEST      ] "map_request",       [XCB_REPARENT_NOTIFY  ] "reparent_notify",
-	[XCB_CONFIGURE_NOTIFY ] "configure_notify",  [XCB_CONFIGURE_REQUEST] "configure_request",
-	[XCB_GRAVITY_NOTIFY   ] "gravity_notify",    [XCB_RESIZE_REQUEST   ] "resize_request",
-	[XCB_CIRCULATE_NOTIFY ] "circulate_notify",  [XCB_CIRCULATE_REQUEST] "circulate_request",
-	[XCB_PROPERTY_NOTIFY  ] "property_notify",   [XCB_SELECTION_CLEAR  ] "selection_clear",
-	[XCB_SELECTION_REQUEST] "selection_request", [XCB_SELECTION_NOTIFY ] "selection_notify",
-	[XCB_COLORMAP_NOTIFY  ] "colormap_notify",   [XCB_CLIENT_MESSAGE   ] "client_message",
-	[XCB_MAPPING_NOTIFY   ] "mapping_notify",    [XCB_GE_GENERIC       ] "ge_generic",
-};
 
 /********************
  * Window functions *
@@ -281,7 +258,12 @@ static void on_configure_request(win_t *win, xcb_configure_request_event_t *even
 static void on_event(xcb_generic_event_t *event)
 {
 	win_t *win = NULL;
-	switch (event->response_type) {
+
+	int type = XCB_EVENT_RESPONSE_TYPE(event);
+	int sent = XCB_EVENT_SENT(event);
+	const char *name = NULL;
+
+	switch (type) {
 		case XCB_CREATE_NOTIFY:
 			on_create_notify((xcb_create_notify_event_t *)event);
 			break;
@@ -298,7 +280,9 @@ static void on_event(xcb_generic_event_t *event)
 				on_configure_request(win, (xcb_configure_request_event_t *)event);
 			break;
 		default:
-			printf("on_%s\n", event_names[event->response_type] ?: "unknown_event");
+			name = xcb_event_get_label(type);
+			printf("on_event: %d:%02X -> %s\n",
+				!!sent, type, name?:"unknown_event");
 			break;
 	}
 }
@@ -309,7 +293,7 @@ static void on_event(xcb_generic_event_t *event)
 
 void sys_move(win_t *win, int x, int y, int w, int h)
 {
-	printf("sys_move: %p - %dx%d @ %d,%d\n",
+	printf("sys_move:  %p - %dx%d @ %d,%d\n",
 			win, w, h, x, y);
 
 	win->x = x;
@@ -338,7 +322,7 @@ void sys_focus(win_t *win)
 
 void sys_show(win_t *win, state_t state)
 {
-	printf("sys_show: %p - %d\n", win, state);
+	printf("sys_show:  %p - %d\n", win, state);
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
