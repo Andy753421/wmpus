@@ -90,7 +90,7 @@ static win_t *win_get(xcb_window_t xcb)
 	win_t   **win = tfind(&key, &cache, win_cmp);
 
 	if (!win) {
-		printf("Warning: no window for %u\n", xcb);
+		warn("no window for %u", xcb);
 		return NULL;
 	}
 
@@ -101,42 +101,63 @@ static win_t *win_get(xcb_window_t xcb)
  * XCB Wrappers *
  ****************/
 
-static xcb_query_tree_reply_t *do_query_tree(xcb_window_t win)
+static int do_query_tree(xcb_window_t win, xcb_window_t **kids)
 {
 	xcb_query_tree_cookie_t cookie =
 		xcb_query_tree(conn, win);
+	if (!cookie.sequence)
+		return warn("do_query_tree: %d - bad cookie", win);
+
 	xcb_query_tree_reply_t *reply =
 		xcb_query_tree_reply(conn, cookie, NULL);
 	if (!reply)
-		error("do_query_tree: %d - no reply", win);
-	printf("do_query_tree: %d\n", win);
-	return reply;
+		return warn("do_query_tree: %d - no reply", win);
+
+	int nkids = xcb_query_tree_children_length(reply);
+	*kids = xcb_query_tree_children(reply);
+	printf("do_query_tree: %d - n=%d\n", win, nkids);
+	return nkids;
 }
 
-static xcb_get_geometry_reply_t *do_get_geometry(xcb_window_t win)
+static int do_get_geometry(xcb_window_t win,
+		int *x, int *y, int *w, int *h)
 {
 	xcb_get_geometry_cookie_t cookie =
 		xcb_get_geometry(conn, win);
+	if (!cookie.sequence)
+		return warn("do_get_geometry: %d - bad cookie", win);
+
 	xcb_get_geometry_reply_t *reply =
 		xcb_get_geometry_reply(conn, cookie, NULL);
 	if (!reply)
-		error("do_get_geometry: %d - no reply", win);
+		return warn("do_get_geometry: %d - no reply", win);
+
 	printf("do_get_geometry: %d - %dx%d @ %d,%d\n",
 			win, reply->width, reply->height, reply->x, reply->y);
-	return reply;
+	*x = reply->x;
+	*y = reply->y;
+	*w = reply->width;
+	*h = reply->height;
+	return 1;
 }
 
-static xcb_get_window_attributes_reply_t *do_get_window_attributes(xcb_window_t win)
+static int do_get_window_attributes(xcb_window_t win,
+		int *override)
 {
 	xcb_get_window_attributes_cookie_t cookie =
 		xcb_get_window_attributes(conn, win);
+	if (!cookie.sequence)
+		return warn("do_get_window_attributes: %d - bad cookie", win);
+
 	xcb_get_window_attributes_reply_t *reply =
 		xcb_get_window_attributes_reply(conn, cookie, NULL);
 	if (!reply)
-		error("do_get_window_attributes: %d - no reply ", win);
+		return warn("do_get_window_attributes: %d - no reply ", win);
+
 	printf("do_get_window_attributes: %d - %d\n",
 			win, reply->override_redirect);
-	return reply;
+	*override = reply->override_redirect;
+	return 1;
 }
 
 static int do_xinerama_check(void)
@@ -144,34 +165,38 @@ static int do_xinerama_check(void)
 	const xcb_query_extension_reply_t *data =
 		xcb_get_extension_data(conn, &xcb_xinerama_id);
 	if (!data || !data->present)
-		return printf("do_xinerama_check: no ext\n"), 0;
+		return warn("do_xinerama_check: no ext");
 
 	xcb_xinerama_is_active_cookie_t cookie =
 		xcb_xinerama_is_active(conn);
 	if (!cookie.sequence)
-		return printf("do_xinerama_check: no cookie\n"), 0;
+		return warn("do_xinerama_check: no cookie");
 
 	xcb_xinerama_is_active_reply_t *reply =
 		xcb_xinerama_is_active_reply(conn, cookie, NULL);
 	if (!reply)
-		printf("do_xinerama_check: no reply\n"), 0;
-	else
-		printf("do_xinerama_check: %d\n", reply->state);
+		warn("do_xinerama_check: no reply");
+
+	printf("do_xinerama_check: %d\n", reply->state);
 	return reply && reply->state;
 }
 
-static xcb_xinerama_query_screens_reply_t *do_query_screens(void)
+static int do_query_screens(xcb_xinerama_screen_info_t **info)
 {
 	xcb_xinerama_query_screens_cookie_t cookie =
 		xcb_xinerama_query_screens(conn);
+	if (!cookie.sequence)
+		return warn("do_query_screens: bad cookie");
+
 	xcb_xinerama_query_screens_reply_t *reply =
 		xcb_xinerama_query_screens_reply(conn, cookie, NULL);
 	if (!reply)
-		printf("do_query_screens: no reply\n");
-	else
-		printf("do_query_screens: %d screens\n",
-			xcb_xinerama_query_screens_screen_info_length(reply));
-	return reply;
+		return warn("do_query_screens: no reply");
+
+	int ninfo = xcb_xinerama_query_screens_screen_info_length(reply);
+	*info = xcb_xinerama_query_screens_screen_info(reply);
+	printf("do_query_screens: %d screens\n", ninfo);
+	return ninfo;
 }
 
 /**********************
@@ -332,14 +357,8 @@ list_t *sys_info(void)
 
 	if (screens == NULL && do_xinerama_check()) {
 		/* Add Xinerama screens */
-		xcb_xinerama_query_screens_reply_t *query;
-		unsigned int ninfo;
-		xcb_xinerama_screen_info_t *info;
-
-		query = do_query_screens();
-		ninfo = xcb_xinerama_query_screens_screen_info_length(query);
-		info  = xcb_xinerama_query_screens_screen_info(query);
-
+		xcb_xinerama_screen_info_t *info = NULL;
+		int ninfo = do_query_screens(&info);
 		for (int i = 0; i < ninfo; i++) {
 			win_t *screen = new0(win_t);
 
@@ -413,41 +432,20 @@ void sys_run(void)
 
 	/* Add each initial window */
 	if (!no_capture) {
-		xcb_query_tree_reply_t *tree;
-		unsigned int nkids;
-		xcb_window_t *kids;
-
-		tree  = do_query_tree(root);
-		nkids = xcb_query_tree_children_length(tree);
-		kids  = xcb_query_tree_children(tree);
-
+		xcb_window_t *kids = NULL;
+		int nkids = do_query_tree(root, &kids);
 		for(int i = 0; i < nkids; i++) {
-			xcb_get_geometry_reply_t *geom;
-			xcb_get_window_attributes_reply_t *attr;
-
-			geom = do_get_geometry(kids[i]);
-			attr = do_get_window_attributes(kids[i]);
-
-			win_t     *win = new0(win_t);
-			win_sys_t *sys = new0(win_sys_t);
-
-			win->x        = geom->x;
-			win->y        = geom->y;
-			win->w        = geom->width;
-			win->h        = geom->height;
-			win->sys      = sys;
-
-			sys->xcb      = kids[i];
-			sys->override = attr->override_redirect;
-
+			win_t *win = new0(win_t);
+			win->sys = new0(win_sys_t);
+			win->sys->xcb = kids[i];
+			do_get_geometry(kids[i], &win->x, &win->y, &win->w, &win->h);
+			do_get_window_attributes(kids[i], &win->sys->override);
 			tsearch(win, &cache, win_cmp);
-
-			if (!attr->override_redirect) {
+			if (!win->sys->override) {
 				wm_insert(win);
-				sys->managed = 1;
+				win->sys->managed = 1;
 			}
 		}
-
 		xcb_flush(conn);
 	}
 

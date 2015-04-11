@@ -133,6 +133,17 @@ int str2num(char *str, int def)
 	return end && *end == '\0' ? num : def;
 }
 
+int warn(char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	fprintf(stderr, "Warning: ");
+	vfprintf(stderr, fmt, ap);
+	fprintf(stderr, "\n");
+	va_end(ap);
+	return 0;
+}
+
 int error(char *fmt, ...)
 {
 	va_list ap;

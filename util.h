@@ -60,4 +60,6 @@ list_t *list_sort(list_t *list, int rev, int (*func)(void*,void*));
 /* Misc */
 int str2num(char *str, int def);
 
+int warn(char *fmt, ...);
+
 int error(char *fmt, ...);
