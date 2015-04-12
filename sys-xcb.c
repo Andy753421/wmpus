@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <search.h>
+#include <string.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_event.h>
@@ -42,14 +43,23 @@ struct win_sys {
 	int mapped;              // window is currently mapped
 };
 
+typedef enum {
+	CLR_FOCUS,
+	CLR_UNFOCUS,
+	CLR_URGENT,
+	NCOLORS
+} color_t;
+
 /* Global data */
 static xcb_connection_t  *conn;
 static xcb_key_symbols_t *keysyms;
+static xcb_colormap_t     colormap;
 static xcb_window_t       root;
+static xcb_window_t       last;
 static xcb_event_mask_t   events;
 static list_t            *screens;
 static void              *cache;
-
+static xcb_pixmap_t       colors[NCOLORS];
 
 /************************
  * Conversion functions *
@@ -279,6 +289,25 @@ static int do_query_screens(xcb_xinerama_screen_info_t **info)
 	return ninfo;
 }
 
+static xcb_pixmap_t do_alloc_color(uint32_t rgb)
+{
+	uint16_t r = (rgb & 0xFF0000) >> 8;
+	uint16_t g = (rgb & 0x00FF00);
+	uint16_t b = (rgb & 0x0000FF) << 8;
+	xcb_alloc_color_cookie_t cookie =
+		xcb_alloc_color(conn, colormap, r, g, b);
+	if (!cookie.sequence)
+		return warn("do_alloc_color: bad cookie");
+
+	xcb_alloc_color_reply_t *reply =
+		xcb_alloc_color_reply(conn, cookie, NULL);
+	if (!reply)
+		return warn("do_alloc_color: no reply");
+
+	printf("do_alloc_color: %06x -> %06x\n", rgb, reply->pixel);
+	return reply->pixel;
+}
+
 /**********************
  * X11 Event Handlers *
  **********************/
@@ -357,6 +386,9 @@ static void on_destroy_notify(win_t *win, xcb_destroy_notify_event_t *event)
 			event->window, win);
 
 	tdelete(win, &cache, win_cmp);
+
+	if (win->sys->xcb == last)
+		last = 0;
 
 	free(win->sys);
 	free(win);
@@ -465,16 +497,21 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	printf("sys_move:  %p - %dx%d @ %d,%d\n",
 			win, w, h, x, y);
 
+	int b = 2*border;
+
 	win->x = x;
 	win->y = y;
-	win->w = w;
-	win->h = h;
+	win->w = MAX(w,1+b);
+	win->h = MAX(h,1+b);
+	w      = MAX(w-b,1);
+	h      = MAX(h-b,1);
 
 	uint16_t mask   = XCB_CONFIG_WINDOW_X
 		        | XCB_CONFIG_WINDOW_Y
 		        | XCB_CONFIG_WINDOW_WIDTH
-		        | XCB_CONFIG_WINDOW_HEIGHT;
-	uint32_t list[] = {x, y, w, h};
+		        | XCB_CONFIG_WINDOW_HEIGHT
+			| XCB_CONFIG_WINDOW_BORDER_WIDTH;
+	uint32_t list[] = {x, y, w, h, border};
 
 	xcb_configure_window(conn, win->sys->xcb, mask, list);
 }
@@ -488,8 +525,15 @@ void sys_raise(win_t *win)
 void sys_focus(win_t *win)
 {
 	printf("sys_focus: %p\n", win);
+	xcb_window_t xcb = win ? win->sys->xcb : root;
+
 	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT,
-			win->sys->xcb, XCB_CURRENT_TIME);
+			xcb, XCB_CURRENT_TIME);
+
+	if (last)
+		xcb_change_window_attributes(conn, last, XCB_CW_BORDER_PIXEL, &colors[CLR_UNFOCUS]);
+	xcb_change_window_attributes(conn, xcb, XCB_CW_BORDER_PIXEL, &colors[CLR_FOCUS]);
+	last = xcb;
 }
 
 void sys_show(win_t *win, state_t state)
@@ -609,14 +653,20 @@ void sys_init(void)
 	if (xcb_connection_has_error(conn))
 		error("xcb connection has errors");
 
+	/* Get root window */
+	const xcb_setup_t     *setup = xcb_get_setup(conn);
+	xcb_screen_iterator_t  iter  = xcb_setup_roots_iterator(setup);
+	root     = iter.data->root;
+	colormap = iter.data->default_colormap;
+
 	/* Allocate key symbols */
 	if (!(keysyms = xcb_key_symbols_alloc(conn)))
 		error("cannot allocate key symbols");
 
-	/* Get root window */
-	const xcb_setup_t     *setup = xcb_get_setup(conn);
-	xcb_screen_iterator_t  iter  = xcb_setup_roots_iterator(setup);
-	root = iter.data->root;
+	/* Read color information */
+	colors[CLR_FOCUS]   = do_alloc_color(0xFF6060);
+	colors[CLR_UNFOCUS] = do_alloc_color(0xD8D8FF);
+	colors[CLR_URGENT]  = do_alloc_color(0xFF0000);
 
 	/* Request substructure redirect */
 	xcb_void_cookie_t cookie;
