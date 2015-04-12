@@ -482,11 +482,14 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 void sys_raise(win_t *win)
 {
 	printf("sys_raise: %p\n", win);
+	xcb_circulate_window(conn, XCB_CIRCULATE_RAISE_LOWEST, win->sys->xcb);
 }
 
 void sys_focus(win_t *win)
 {
 	printf("sys_focus: %p\n", win);
+	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT,
+			win->sys->xcb, XCB_CURRENT_TIME);
 }
 
 void sys_show(win_t *win, state_t state)
