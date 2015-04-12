@@ -55,11 +55,11 @@ static xcb_connection_t  *conn;
 static xcb_key_symbols_t *keysyms;
 static xcb_colormap_t     colormap;
 static xcb_window_t       root;
-static xcb_window_t       last;
 static xcb_event_mask_t   events;
 static list_t            *screens;
 static void              *cache;
 static xcb_pixmap_t       colors[NCOLORS];
+static unsigned int       grabbed;
 
 /************************
  * Conversion functions *
@@ -151,10 +151,12 @@ static mod_t mask_to_mod(xcb_mod_mask_t mask, int up)
 static ptr_t list_to_ptr(int16_t *list)
 {
 	ptr_t ptr = {};
-	ptr.rx = list[0]; // root_x
-	ptr.ry = list[1]; // root_y
-	ptr.x  = list[2]; // event_x
-	ptr.y  = list[3]; // event_y
+	if (list) {
+		ptr.rx = list[0]; // root_x
+		ptr.ry = list[1]; // root_y
+		ptr.x  = list[2]; // event_x
+		ptr.y  = list[3]; // event_y
+	}
 	return ptr;
 }
 
@@ -308,6 +310,71 @@ static xcb_pixmap_t do_alloc_color(uint32_t rgb)
 	return reply->pixel;
 }
 
+static void do_grab_pointer(xcb_event_mask_t mask)
+{
+	if (!grabbed)
+		xcb_grab_pointer(conn, 0, root, mask,
+				XCB_GRAB_MODE_ASYNC,
+				XCB_GRAB_MODE_ASYNC,
+				0, 0, XCB_CURRENT_TIME);
+	grabbed++;
+}
+
+static void do_ungrab_pointer(void)
+{
+	grabbed--;
+	if (!grabbed)
+		xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+}
+
+/**************************
+ * Window Manager Helpers *
+ **************************/
+
+/* Send event info */
+static int send_event(event_t ev, xcb_window_t ewin)
+{
+	win_t *win = win_get(ewin);
+	do_grab_pointer(0);
+	int status = wm_handle_event(win, ev, MOD(), PTR());
+	do_ungrab_pointer();
+	return status;
+}
+
+/* Send event info */
+static int send_event_info(event_t ev, xcb_mod_mask_t mask, int up, int16_t *pos,
+		xcb_window_t rwin, xcb_window_t ewin, xcb_window_t cwin)
+{
+	xcb_window_t xcb = ewin == rwin ? cwin : ewin;
+	win_t *win = win_get(xcb);
+	mod_t  mod = mask_to_mod(mask, up);
+	ptr_t  ptr = list_to_ptr(pos);
+	do_grab_pointer(0);
+	int status = wm_handle_event(win, ev, mod, ptr);
+	do_ungrab_pointer();
+	return status;
+}
+
+/* Send pointer motion info */
+static int send_pointer(int16_t *pos,
+		xcb_window_t rwin, xcb_window_t ewin, xcb_window_t cwin)
+{
+	xcb_window_t xcb = ewin == rwin ? cwin : ewin;
+	win_t *win = win_get(xcb);
+	ptr_t  ptr = list_to_ptr(pos);
+	do_grab_pointer(0);
+	int status = wm_handle_ptr(win, ptr);
+	do_ungrab_pointer();
+	return status;
+}
+
+/* Send window state info */
+static int send_state(void)
+{
+	return 0;
+}
+
+
 /**********************
  * X11 Event Handlers *
  **********************/
@@ -315,49 +382,75 @@ static xcb_pixmap_t do_alloc_color(uint32_t rgb)
 /* Specific events */
 static void on_key_event(xcb_key_press_event_t *event, int up)
 {
-	xcb_window_t xcb = event->event == root ?
-		event->child : event->event;
-	win_t  *win = win_get(xcb);
-	event_t ev  = keycode_to_event(event->detail);
-	mod_t   mod = mask_to_mod(event->state, up);
-	ptr_t   ptr = list_to_ptr(&event->root_x);
-	printf("on_key_event:         xcb=%u -> win=%p\n", xcb, win);
-	wm_handle_event(win, ev, mod, ptr);
+	printf("on_key_event:         xcb=%-8u\n", event->event);
+	event_t ev = keycode_to_event(event->detail);
+	send_event_info(ev, event->state, up, &event->root_x,
+		event->root, event->event, event->child);
 }
 
 static void on_button_event(xcb_button_press_event_t *event, int up)
 {
-	xcb_window_t xcb = event->event == root ?
-		event->child : event->event;
-	win_t  *win = win_get(xcb);
-	event_t ev  = button_to_event(event->detail);
-	mod_t   mod = mask_to_mod(event->state, up);
-	ptr_t   ptr = list_to_ptr(&event->root_x);
-	printf("on_button_event:      xcb=%u -> win=%p\n", xcb, win);
-
-	if (!wm_handle_event(win, ev, mod, ptr))
+	printf("on_button_event:      xcb=%-8u\n", event->event);
+	event_t ev = button_to_event(event->detail);
+	if (!send_event_info(ev, event->state, up, &event->root_x,
+				event->root, event->event, event->child))
 		xcb_allow_events(conn, XCB_ALLOW_REPLAY_POINTER, event->time);
 	else if (!up)
-		xcb_grab_pointer(conn, 1, xcb,
-				XCB_EVENT_MASK_POINTER_MOTION |
-				XCB_EVENT_MASK_BUTTON_RELEASE,
-				XCB_GRAB_MODE_ASYNC,
-				XCB_GRAB_MODE_ASYNC,
-				0, 0, XCB_CURRENT_TIME);
+		do_grab_pointer(XCB_EVENT_MASK_POINTER_MOTION |
+		                XCB_EVENT_MASK_BUTTON_RELEASE);
 	else
-		xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+		do_ungrab_pointer();
 
 }
 
 static void on_motion_notify(xcb_motion_notify_event_t *event)
 {
-	xcb_window_t xcb = event->event == root ?
-		event->child : event->event;
-	win_t *win = win_get(xcb);
-	ptr_t  ptr = list_to_ptr(&event->root_x);
-	printf("on_motion_notify:     xcb=%u -> win=%p - %d,%d / %d.%d\n", xcb, win,
-			ptr.x, ptr.y, ptr.rx, ptr.ry);
-	wm_handle_ptr(win, ptr);
+	printf("on_motion_notify:     xcb=%-8u - %d,%d / %d.%d\n", event->event,
+			event->event_x, event->event_y,
+			event->root_x,  event->root_y);
+	send_pointer(&event->root_x, event->root, event->event, event->child);
+}
+
+static void on_enter_notify(xcb_enter_notify_event_t *event)
+{
+	if (event->mode != XCB_NOTIFY_MODE_NORMAL)
+		return;
+	printf("on_enter_notify:      xcb=%-8u\n", event->event);
+	send_event_info(EV_ENTER, event->state, 0, &event->root_x,
+		event->root, event->event, event->child);
+}
+
+static void on_leave_notify(xcb_leave_notify_event_t *event)
+{
+	if (event->mode != XCB_NOTIFY_MODE_NORMAL)
+		return;
+	printf("on_leave_notify:      xcb=%-8u\n", event->event);
+	send_event_info(EV_LEAVE, event->state, 0, &event->root_x,
+		event->root, event->event, event->child);
+}
+
+static void on_focus_in(xcb_focus_in_event_t *event)
+{
+	if (event->mode != XCB_NOTIFY_MODE_NORMAL &&
+	    event->mode != XCB_NOTIFY_MODE_WHILE_GRABBED)
+		return;
+	printf("on_focus_in:          xcb=%-8u mode=%d\n", event->event, event->mode);
+	xcb_change_window_attributes(conn, event->event,
+			XCB_CW_BORDER_PIXEL, &colors[CLR_FOCUS]);
+	if (event->mode == XCB_NOTIFY_MODE_NORMAL)
+		send_event(EV_FOCUS, event->event);
+}
+
+static void on_focus_out(xcb_focus_out_event_t *event)
+{
+	if (event->mode != XCB_NOTIFY_MODE_NORMAL &&
+	    event->mode != XCB_NOTIFY_MODE_WHILE_GRABBED)
+		return;
+	printf("on_focus_out:         xcb=%-8u mode=%d\n", event->event, event->mode);
+	xcb_change_window_attributes(conn, event->event,
+			XCB_CW_BORDER_PIXEL, &colors[CLR_UNFOCUS]);
+	if (event->mode == XCB_NOTIFY_MODE_NORMAL)
+		send_event(EV_UNFOCUS, event->event);
 }
 
 static void on_create_notify(xcb_create_notify_event_t *event)
@@ -365,7 +458,7 @@ static void on_create_notify(xcb_create_notify_event_t *event)
 	win_t     *win = new0(win_t);
 	win_sys_t *sys = new0(win_sys_t);
 
-	printf("on_create_notify:     xcb=%u -> win=%p\n",
+	printf("on_create_notify:     xcb=%-8u -> win=%p\n",
 			event->window, win);
 
 	win->x        = event->x;
@@ -382,13 +475,10 @@ static void on_create_notify(xcb_create_notify_event_t *event)
 
 static void on_destroy_notify(win_t *win, xcb_destroy_notify_event_t *event)
 {
-	printf("on_destroy_notify:    xcb=%u -> win=%p\n",
+	printf("on_destroy_notify:    xcb=%-8u -> win=%p\n",
 			event->window, win);
 
 	tdelete(win, &cache, win_cmp);
-
-	if (win->sys->xcb == last)
-		last = 0;
 
 	free(win->sys);
 	free(win);
@@ -396,7 +486,7 @@ static void on_destroy_notify(win_t *win, xcb_destroy_notify_event_t *event)
 
 static void on_map_request(win_t *win, xcb_map_request_event_t *event)
 {
-	printf("on_map_request:       xcb=%u -> win=%p\n",
+	printf("on_map_request:       xcb=%-8u -> win=%p\n",
 			event->window, win);
 
 	if (!win->sys->override && !win->sys->mapped)
@@ -409,7 +499,7 @@ static void on_map_request(win_t *win, xcb_map_request_event_t *event)
 
 static void on_configure_request(win_t *win, xcb_configure_request_event_t *event)
 {
-	printf("on_configure_request: xcb=%u -> win=%p -- %dx%d @ %d,%d\n",
+	printf("on_configure_request: xcb=%-8u -> win=%p -- %dx%d @ %d,%d\n",
 			event->window, win,
 			event->width, event->height,
 			event->x, event->y);
@@ -460,6 +550,18 @@ static void on_event(xcb_generic_event_t *event)
 			break;
 		case XCB_MOTION_NOTIFY:
 			on_motion_notify((xcb_motion_notify_event_t *)event);
+			break;
+		case XCB_ENTER_NOTIFY:
+			on_enter_notify((xcb_enter_notify_event_t *)event);
+			break;
+		case XCB_LEAVE_NOTIFY:
+			on_leave_notify((xcb_leave_notify_event_t *)event);
+			break;
+		case XCB_FOCUS_IN:
+			on_focus_in((xcb_focus_in_event_t *)event);
+			break;
+		case XCB_FOCUS_OUT:
+			on_focus_out((xcb_focus_out_event_t *)event);
 			break;
 
 		/* Window management */
@@ -529,11 +631,6 @@ void sys_focus(win_t *win)
 
 	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT,
 			xcb, XCB_CURRENT_TIME);
-
-	if (last)
-		xcb_change_window_attributes(conn, last, XCB_CW_BORDER_PIXEL, &colors[CLR_UNFOCUS]);
-	xcb_change_window_attributes(conn, xcb, XCB_CW_BORDER_PIXEL, &colors[CLR_FOCUS]);
-	last = xcb;
 }
 
 void sys_show(win_t *win, state_t state)
