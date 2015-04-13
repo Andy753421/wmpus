@@ -65,6 +65,17 @@ static unsigned int       grabbed;
  * Conversion functions *
  ************************/
 
+/* State names */
+static char *state_map[] = {
+	[ST_HIDE ] "hide ",
+	[ST_SHOW ] "show ",
+	[ST_FULL ] "full ",
+	[ST_MAX  ] "max  ",
+	[ST_SHADE] "shade",
+	[ST_ICON ] "icon ",
+	[ST_CLOSE] "close",
+};
+
 /* Key presses */
 static struct {
 	event_t      ev;
@@ -91,6 +102,10 @@ static struct {
 	{ EV_F11,      0xFFC8 },
 	{ EV_F12,      0xFFC9 },
 };
+
+/************************
+ * Conversion functions *
+ ************************/
 
 static xcb_keycode_t *event_to_keycodes(event_t ev)
 {
@@ -291,6 +306,21 @@ static int do_query_screens(xcb_xinerama_screen_info_t **info)
 	return ninfo;
 }
 
+static int do_get_input_focus(void)
+{
+	xcb_get_input_focus_cookie_t cookie =
+		xcb_get_input_focus(conn);
+	if (!cookie.sequence)
+		return warn("do_get_input_focus: bad cookie");
+
+	xcb_get_input_focus_reply_t *reply =
+		xcb_get_input_focus_reply(conn, cookie, NULL);
+	if (!reply)
+		return warn("do_get_input_focus: no reply");
+
+	return reply->focus;
+}
+
 static xcb_pixmap_t do_alloc_color(uint32_t rgb)
 {
 	uint16_t r = (rgb & 0xFF0000) >> 8;
@@ -325,6 +355,32 @@ static void do_ungrab_pointer(void)
 	grabbed--;
 	if (!grabbed)
 		xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+}
+
+static void do_configure_window(xcb_window_t win,
+		int x, int y, int w, int h,
+		int b, int s, int r)
+{
+	int table[][2] = {
+		{ x, XCB_CONFIG_WINDOW_X            },
+		{ y, XCB_CONFIG_WINDOW_Y            },
+		{ w, XCB_CONFIG_WINDOW_WIDTH        },
+		{ h, XCB_CONFIG_WINDOW_HEIGHT       },
+		{ b, XCB_CONFIG_WINDOW_BORDER_WIDTH },
+		{ s, XCB_CONFIG_WINDOW_SIBLING      },
+		{ r, XCB_CONFIG_WINDOW_STACK_MODE   },
+	};
+
+	uint16_t mask    = 0;
+	uint32_t list[7] = {};
+	for (int i = 0; i < 7; i++) {
+		if (table[i][0] >= 0) {
+			list[i] = table[i][0];
+			mask   |= table[i][1];
+		}
+	}
+
+	xcb_configure_window(conn, win, mask, list);
 }
 
 /**************************
@@ -383,9 +439,10 @@ static int send_state(void)
 static void on_key_event(xcb_key_press_event_t *event, int up)
 {
 	printf("on_key_event:         xcb=%-8u\n", event->event);
+	xcb_window_t focus = do_get_input_focus();
 	event_t ev = keycode_to_event(event->detail);
 	send_event_info(ev, event->state, up, &event->root_x,
-		event->root, event->event, event->child);
+		event->root, focus, event->child);
 }
 
 static void on_button_event(xcb_button_press_event_t *event, int up)
@@ -608,20 +665,17 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	w      = MAX(w-b,1);
 	h      = MAX(h-b,1);
 
-	uint16_t mask   = XCB_CONFIG_WINDOW_X
-		        | XCB_CONFIG_WINDOW_Y
-		        | XCB_CONFIG_WINDOW_WIDTH
-		        | XCB_CONFIG_WINDOW_HEIGHT
-			| XCB_CONFIG_WINDOW_BORDER_WIDTH;
-	uint32_t list[] = {x, y, w, h, border};
-
-	xcb_configure_window(conn, win->sys->xcb, mask, list);
+	do_configure_window(win->sys->xcb, x, y, w, h, -1, -1, -1);
 }
 
 void sys_raise(win_t *win)
 {
 	printf("sys_raise: %p\n", win);
-	xcb_circulate_window(conn, XCB_CIRCULATE_RAISE_LOWEST, win->sys->xcb);
+
+	uint16_t mask = XCB_CONFIG_WINDOW_STACK_MODE;
+	uint32_t list = XCB_STACK_MODE_ABOVE;
+
+	xcb_configure_window(conn, win->sys->xcb, mask, &list);
 }
 
 void sys_focus(win_t *win)
@@ -635,7 +689,78 @@ void sys_focus(win_t *win)
 
 void sys_show(win_t *win, state_t state)
 {
-	printf("sys_show:  %p - %d\n", win, state);
+	printf("sys_show:  %p - %s -> %s\n", win,
+			state_map[win->state], state_map[state]);
+	xcb_window_t xcb = win ? win->sys->xcb : root;
+
+	/* Find screen */
+	win_t *screen = NULL;
+	if (state == ST_FULL || state == ST_MAX) {
+		for (list_t *cur = screens; cur; cur = cur->next) {
+			screen = cur->data;
+			if (win->x >= screen->x && win->x <= screen->x+screen->w &&
+			    win->y >= screen->y && win->y <= screen->y+screen->h)
+				break;
+		}
+	}
+
+	/* Change window state */
+	switch (state) {
+		case ST_HIDE:
+			xcb_unmap_window(conn, xcb);
+			break;
+
+		case ST_SHOW:
+			xcb_map_window(conn, xcb);
+			do_configure_window(xcb, win->x, win->y,
+					MAX(win->w - 2*border, 1),
+					MAX(win->h - 2*border, 1),
+					border, -1, -1);
+			break;
+
+		case ST_FULL:
+			xcb_map_window(conn, xcb);
+			do_configure_window(xcb, screen->x, screen->y, screen->w, screen->h,
+					0, -1, XCB_STACK_MODE_ABOVE);
+			xcb_circulate_window(conn, XCB_CIRCULATE_RAISE_LOWEST, xcb);
+			break;
+
+		case ST_MAX:
+			xcb_map_window(conn, xcb);
+			do_configure_window(xcb, screen->x, screen->y,
+					MAX(screen->w - 2*border, 1),
+					MAX(screen->h - 2*border, 1),
+					border, -1, XCB_STACK_MODE_ABOVE);
+			break;
+
+		case ST_SHADE:
+			xcb_map_window(conn, xcb);
+			do_configure_window(xcb, -1, -1, -1, stack,
+					border, -1, -1);
+			break;
+
+		case ST_ICON:
+			xcb_map_window(conn, xcb);
+			do_configure_window(xcb, -1, -1, 100, 100,
+					border, -1, -1);
+			break;
+
+		case ST_CLOSE:
+			// TODO
+			// if (!win_msg(win, WM_DELETE)) {
+			// 	XGrabServer(win->sys->dpy);
+			// 	XSetErrorHandler(xnoerror);
+			// 	XSetCloseDownMode(win->sys->dpy, DestroyAll);
+			// 	XKillClient(win->sys->dpy, win->sys->xid);
+			// 	XSync(win->sys->dpy, False);
+			// 	XSetErrorHandler(xerror);
+			// 	XUngrabServer(win->sys->dpy);
+			// }
+			break;
+	}
+
+	/* Update state */
+	win->state = state;
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
