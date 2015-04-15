@@ -530,10 +530,12 @@ static void on_create_notify(xcb_create_notify_event_t *event)
 	tsearch(win, &cache, win_cmp);
 }
 
-static void on_destroy_notify(win_t *win, xcb_destroy_notify_event_t *event)
+static void on_destroy_notify(xcb_destroy_notify_event_t *event)
 {
+	win_t *win = win_get(event->window);
 	printf("on_destroy_notify:    xcb=%-8u -> win=%p\n",
 			event->window, win);
+	if (!win) return;
 
 	tdelete(win, &cache, win_cmp);
 
@@ -541,10 +543,12 @@ static void on_destroy_notify(win_t *win, xcb_destroy_notify_event_t *event)
 	free(win);
 }
 
-static void on_map_request(win_t *win, xcb_map_request_event_t *event)
+static void on_map_request(xcb_map_request_event_t *event)
 {
+	win_t *win = win_get(event->window);
 	printf("on_map_request:       xcb=%-8u -> win=%p\n",
 			event->window, win);
+	if (!win) return;
 
 	if (!win->sys->override && !win->sys->mapped)
 		wm_insert(win);
@@ -554,12 +558,14 @@ static void on_map_request(win_t *win, xcb_map_request_event_t *event)
 	sys_move(win, win->x, win->y, win->w, win->h);
 }
 
-static void on_configure_request(win_t *win, xcb_configure_request_event_t *event)
+static void on_configure_request(xcb_configure_request_event_t *event)
 {
+	win_t *win = win_get(event->window);
 	printf("on_configure_request: xcb=%-8u -> win=%p -- %dx%d @ %d,%d\n",
 			event->window, win,
 			event->width, event->height,
 			event->x, event->y);
+	if (!win) return;
 
 	win->x = event->x;
 	win->y = event->y;
@@ -585,11 +591,7 @@ static void on_configure_request(win_t *win, xcb_configure_request_event_t *even
 /* Generic Event */
 static void on_event(xcb_generic_event_t *event)
 {
-	win_t   *win = NULL;
-
 	int type = XCB_EVENT_RESPONSE_TYPE(event);
-	int sent = XCB_EVENT_SENT(event);
-	const char *name = NULL;
 
 	switch (type) {
 		/* Input handling */
@@ -626,23 +628,21 @@ static void on_event(xcb_generic_event_t *event)
 			on_create_notify((xcb_create_notify_event_t *)event);
 			break;
 		case XCB_DESTROY_NOTIFY:
-			if ((win = win_get(((xcb_destroy_notify_event_t *)event)->window)))
-				on_destroy_notify(win, (xcb_destroy_notify_event_t *)event);
+			on_destroy_notify((xcb_destroy_notify_event_t *)event);
 			break;
 		case XCB_MAP_REQUEST:
-			if ((win = win_get(((xcb_map_request_event_t *)event)->window)))
-				on_map_request(win, (xcb_map_request_event_t *)event);
+			on_map_request((xcb_map_request_event_t *)event);
 			break;
 		case XCB_CONFIGURE_REQUEST:
-			if ((win = win_get(((xcb_configure_request_event_t *)event)->window)))
-				on_configure_request(win, (xcb_configure_request_event_t *)event);
+			on_configure_request((xcb_configure_request_event_t *)event);
 			break;
 
 		/* Unknown events */
 		default:
-			name = xcb_event_get_label(type);
 			printf("on_event: %d:%02X -> %s\n",
-				!!sent, type, name?:"unknown_event");
+				XCB_EVENT_SENT(event) != 0,
+				XCB_EVENT_RESPONSE_TYPE(event),
+				xcb_event_get_label(type) ?: "unknown_event");
 			break;
 	}
 }
