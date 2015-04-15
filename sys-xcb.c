@@ -563,6 +563,26 @@ static void on_destroy_notify(xcb_destroy_notify_event_t *event)
 	free(win);
 }
 
+static void on_unmap_notify(xcb_unmap_notify_event_t *event)
+{
+	win_t *win = win_get(event->window);
+	printf("on_unmap_notify:      xcb=%-8u -> win=%p\n",
+			event->window, win);
+	if (!win) return;
+
+	send_state(win, ST_HIDE);
+}
+
+static void on_map_notify(xcb_map_notify_event_t *event)
+{
+	win_t *win = win_get(event->window);
+	printf("on_map_notify:        xcb=%-8u -> win=%p\n",
+			event->window, win);
+	if (!win) return;
+
+	send_state(win, ST_SHOW);
+}
+
 static void on_map_request(xcb_map_request_event_t *event)
 {
 	win_t *win = win_get(event->window);
@@ -646,6 +666,12 @@ static void on_event(xcb_generic_event_t *event)
 			break;
 		case XCB_DESTROY_NOTIFY:
 			on_destroy_notify((xcb_destroy_notify_event_t *)event);
+			break;
+		case XCB_UNMAP_NOTIFY:
+			on_unmap_notify((xcb_unmap_notify_event_t *)event);
+			break;
+		case XCB_MAP_NOTIFY:
+			on_map_notify((xcb_map_notify_event_t *)event);
 			break;
 		case XCB_MAP_REQUEST:
 			on_map_request((xcb_map_request_event_t *)event);
