@@ -330,7 +330,7 @@ static void put_win_col(win_t *win, tag_t *tag, dpy_t *dpy, col_t *col)
 {
 	row_t *row = new0(row_t);
 	row->win   = win;
-	row->state = win->state ?: ST_SHOW;
+	row->state = win->state;
 
 	if (col == NULL) {
 		col = new0(col_t);
@@ -900,6 +900,10 @@ void wm_insert(win_t *win)
 {
 	printf("wm_insert: %p\n", win);
 	print_txt();
+
+	/* Make sure it's visible */
+	if (win->state == ST_HIDE)
+		return;
 
 	/* Check for toolbars */
 	if (win->type == TYPE_TOOLBAR)
