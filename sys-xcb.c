@@ -39,8 +39,7 @@ static int no_capture = 0;
 struct win_sys {
 	xcb_window_t     xcb;    // xcb window id
 	xcb_event_mask_t events; // currently watch events
-	int override;            // normal vs override redirect
-	int mapped;              // window is currently mapped
+	int managed;             // window is managed by wm
 };
 
 typedef enum {
@@ -425,11 +424,28 @@ static int send_pointer(int16_t *pos,
 }
 
 /* Send window state info */
-static int send_state(void)
+static void send_manage(win_t *win, int managed)
 {
-	return 0;
+	if (win->sys->managed == managed)
+		return;
+	if (managed)
+		wm_insert(win);
+	else
+		wm_remove(win);
+	win->sys->managed = managed;
 }
 
+/* Send window state info */
+static void send_state(win_t *win, state_t next)
+{
+	if (!win->sys->managed)
+		return;
+	if (win->state == next)
+		return;
+	state_t prev = win->state;
+	win->state = next;
+	wm_handle_state(win, prev, next);
+}
 
 /**********************
  * X11 Event Handlers *
@@ -525,7 +541,9 @@ static void on_create_notify(xcb_create_notify_event_t *event)
 	win->sys      = sys;
 
 	sys->xcb      = event->window;
-	sys->override = event->override_redirect;
+
+	if (!event->override_redirect)
+		send_manage(win, 1);
 
 	tsearch(win, &cache, win_cmp);
 }
@@ -536,6 +554,8 @@ static void on_destroy_notify(xcb_destroy_notify_event_t *event)
 	printf("on_destroy_notify:    xcb=%-8u -> win=%p\n",
 			event->window, win);
 	if (!win) return;
+
+	send_manage(win, 0);
 
 	tdelete(win, &cache, win_cmp);
 
@@ -550,10 +570,7 @@ static void on_map_request(xcb_map_request_event_t *event)
 			event->window, win);
 	if (!win) return;
 
-	if (!win->sys->override && !win->sys->mapped)
-		wm_insert(win);
-	win->sys->mapped = 1;
-
+	send_state(win, ST_SHOW);
 	xcb_map_window(conn, win->sys->xcb);
 	sys_move(win, win->x, win->y, win->w, win->h);
 }
@@ -904,15 +921,17 @@ void sys_run(void)
 		xcb_window_t *kids = NULL;
 		int nkids = do_query_tree(root, &kids);
 		for(int i = 0; i < nkids; i++) {
+			int override=0, mapped=0;
 			win_t *win = new0(win_t);
 			win->sys = new0(win_sys_t);
 			win->sys->xcb = kids[i];
-			do_get_geometry(kids[i], &win->x, &win->y, &win->w, &win->h);
-			do_get_window_attributes(kids[i],
-				&win->sys->override, &win->sys->mapped);
 			tsearch(win, &cache, win_cmp);
-			if (!win->sys->override && win->sys->mapped)
-				wm_insert(win);
+			do_get_geometry(kids[i], &win->x, &win->y, &win->w, &win->h);
+			do_get_window_attributes(kids[i], &override, &mapped);
+			if (!override)
+				send_manage(win, 1);
+			if (mapped)
+				send_state(win, ST_SHOW);
 		}
 		xcb_flush(conn);
 	}
