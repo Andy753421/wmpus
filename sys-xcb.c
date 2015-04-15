@@ -746,16 +746,7 @@ void sys_show(win_t *win, state_t state)
 			break;
 
 		case ST_CLOSE:
-			// TODO
-			// if (!win_msg(win, WM_DELETE)) {
-			// 	XGrabServer(win->sys->dpy);
-			// 	XSetErrorHandler(xnoerror);
-			// 	XSetCloseDownMode(win->sys->dpy, DestroyAll);
-			// 	XKillClient(win->sys->dpy, win->sys->xid);
-			// 	XSync(win->sys->dpy, False);
-			// 	XSetErrorHandler(xerror);
-			// 	XUngrabServer(win->sys->dpy);
-			// }
+			xcb_kill_client(conn, xcb);
 			break;
 	}
 
@@ -880,6 +871,9 @@ void sys_init(void)
 	xcb_screen_iterator_t  iter  = xcb_setup_roots_iterator(setup);
 	root     = iter.data->root;
 	colormap = iter.data->default_colormap;
+
+	/* Setup for for ST_CLOSE */
+	xcb_set_close_down_mode(conn, XCB_CLOSE_DOWN_DESTROY_ALL);
 
 	/* Allocate key symbols */
 	if (!(keysyms = xcb_key_symbols_alloc(conn)))
