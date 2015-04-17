@@ -22,6 +22,7 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_event.h>
 #include <xcb/xcb_keysyms.h>
+#include <xcb/xcb_ewmh.h>
 #include <xcb/xinerama.h>
 
 #include "util.h"
@@ -36,9 +37,17 @@ static int stack      = 25;
 static int no_capture = 0;
 
 /* Internal structures */
+typedef struct {
+	int left;
+	int right;
+	int top;
+	int bottom;
+} strut_t;
+
 struct win_sys {
 	xcb_window_t     xcb;    // xcb window id
 	xcb_event_mask_t events; // currently watch events
+	strut_t          strut;  // toolbar struts
 	int managed;             // window is managed by wm
 };
 
@@ -50,15 +59,16 @@ typedef enum {
 } color_t;
 
 /* Global data */
-static xcb_connection_t  *conn;
-static xcb_key_symbols_t *keysyms;
-static xcb_colormap_t     colormap;
-static xcb_window_t       root;
-static xcb_event_mask_t   events;
-static list_t            *screens;
-static void              *cache;
-static xcb_pixmap_t       colors[NCOLORS];
-static unsigned int       grabbed;
+static xcb_connection_t      *conn;
+static xcb_ewmh_connection_t  ewmh;
+static xcb_key_symbols_t     *keysyms;
+static xcb_colormap_t         colormap;
+static xcb_window_t           root;
+static xcb_event_mask_t       events;
+static list_t                *screens;
+static void                  *cache;
+static xcb_pixmap_t           colors[NCOLORS];
+static unsigned int           grabbed;
 
 /************************
  * Conversion functions *
@@ -318,6 +328,41 @@ static int do_get_input_focus(void)
 		return warn("do_get_input_focus: no reply");
 
 	return reply->focus;
+}
+
+static int do_ewmh_init_atoms(void)
+{
+	xcb_intern_atom_cookie_t *cookies =
+		xcb_ewmh_init_atoms(conn, &ewmh);
+	if (!cookies)
+		return warn("do_ewmh_init_atoms: no cookies");
+
+	int status =
+		xcb_ewmh_init_atoms_replies(&ewmh, cookies, NULL);
+	if (!status)
+		return warn("do_ewmh_init_atoms: no status");
+	return status;
+}
+
+static int do_get_strut(xcb_window_t win, strut_t *strut)
+{
+	xcb_get_property_cookie_t cookie =
+		xcb_ewmh_get_wm_strut(&ewmh, win);
+	if (!cookie.sequence)
+		return warn("do_get_strut: bad cookie");
+
+	xcb_ewmh_get_extents_reply_t ext = {};
+	int status =
+		xcb_ewmh_get_wm_strut_reply(&ewmh, cookie, &ext, NULL);
+	if (!status)
+		return warn("do_get_strut: no status");
+
+	strut->left   = ext.left;
+	strut->right  = ext.right;
+	strut->top    = ext.top;
+	strut->bottom = ext.bottom;
+
+	return ext.left || ext.right || ext.top || ext.bottom;
 }
 
 static xcb_pixmap_t do_alloc_color(uint32_t rgb)
@@ -589,6 +634,11 @@ static void on_map_request(xcb_map_request_event_t *event)
 	printf("on_map_request:       xcb=%-8u -> win=%p\n",
 			event->window, win);
 	if (!win) return;
+
+	if (do_get_strut(win->sys->xcb, &win->sys->strut))
+		printf("Map: Got a strut!\n");
+	else
+		printf("Map: No struts here!\n");
 
 	send_state(win, ST_SHOW);
 	xcb_map_window(conn, win->sys->xcb);
@@ -914,6 +964,10 @@ void sys_init(void)
 	xcb_screen_iterator_t  iter  = xcb_setup_roots_iterator(setup);
 	root     = iter.data->root;
 	colormap = iter.data->default_colormap;
+
+	/* Setup EWMH connection */
+	if (!do_ewmh_init_atoms())
+		error("ewmh setup failed");
 
 	/* Setup for for ST_CLOSE */
 	xcb_set_close_down_mode(conn, XCB_CLOSE_DOWN_DESTROY_ALL);
