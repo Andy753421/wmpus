@@ -60,6 +60,7 @@ static xcb_colormap_t         colormap;
 static xcb_window_t           root;
 static xcb_event_mask_t       events;
 static list_t                *screens;
+static list_t                *struts;
 static void                  *cache;
 static unsigned int           grabbed;
 static int                    running;
@@ -240,6 +241,37 @@ static void win_free(win_t *win)
 			win->sys->xcb, win);
 	free(win->sys);
 	free(win);
+}
+
+static void win_add_strut(win_t *win)
+{
+	win->type = TYPE_TOOLBAR;
+	for (list_t *cur = screens; cur; cur = cur->next) {
+		win_t   *screen = cur->data;
+		strut_t *strut  = &win->sys->strut;
+		screen->x += strut->left;
+		screen->y += strut->top;
+		screen->w -= strut->left + strut->right;
+		screen->h -= strut->top  + strut->bottom;
+	}
+	struts = list_insert(struts, win);
+
+}
+
+static void win_del_strut(win_t *win)
+{
+	list_t *link = list_find(struts, win);
+	if (!link)
+		return;
+	for (list_t *cur = screens; cur; cur = cur->next) {
+		win_t   *screen = cur->data;
+		strut_t *strut  = &win->sys->strut;
+		screen->x -= strut->left;
+		screen->y -= strut->top;
+		screen->w += strut->left + strut->right;
+		screen->h += strut->top  + strut->bottom;
+	}
+	struts = list_remove(struts, link, 0);
 }
 
 /****************
@@ -695,6 +727,7 @@ static void on_unmap_notify(xcb_unmap_notify_event_t *event)
 			event->window, win);
 	if (!win) return;
 
+	win_del_strut(win);
 	send_state(win, ST_HIDE);
 }
 
@@ -716,10 +749,7 @@ static void on_map_request(xcb_map_request_event_t *event)
 	if (!win) return;
 
 	if (do_get_strut(win->sys->xcb, &win->sys->strut))
-		printf("Map: Got a strut!\n");
-	else
-		printf("Map: No struts here!\n");
-
+		win_add_strut(win);
 	send_state(win, ST_SHOW);
 	xcb_map_window(conn, win->sys->xcb);
 	sys_move(win, win->x, win->y, win->w, win->h);
@@ -1126,6 +1156,8 @@ void sys_run(void)
 			if (kids[i] == control)
 				continue;
 			win_t *win = win_new(kids[i]);
+			if (do_get_strut(win->sys->xcb, &win->sys->strut))
+				win_add_strut(win);
 			do_get_geometry(kids[i], &win->x, &win->y, &win->w, &win->h);
 			do_get_window_attributes(kids[i], &override, &mapped);
 			printf("  found %-8u %dx%d @ %d,%d --%s%s\n", kids[i],
