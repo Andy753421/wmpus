@@ -345,7 +345,9 @@ static xcb_atom_t do_intern_atom(const char *name)
 	if (!reply)
 		return warn("do_intern_atom: no reply");
 
-	return reply->atom;
+	xcb_atom_t atom = reply->atom;
+	free(reply);
+	return atom;
 }
 
 static int do_ewmh_init_atoms(void)
@@ -399,7 +401,9 @@ static xcb_pixmap_t do_alloc_color(uint32_t rgb)
 		return warn("do_alloc_color: no reply");
 
 	printf("do_alloc_color: %06x -> %06x\n", rgb, reply->pixel);
-	return reply->pixel;
+	xcb_pixmap_t pixel = reply->pixel;
+	free(reply);
+	return pixel;
 }
 
 static void do_grab_pointer(xcb_event_mask_t mask)
@@ -1100,7 +1104,9 @@ void sys_exit(void)
 void sys_free(void)
 {
 	printf("sys_free\n");
-	if (conn)
+	if (conn) {
+		xcb_ewmh_connection_wipe(&ewmh);
 		xcb_disconnect(conn);
+	}
 	conn = NULL;
 }
