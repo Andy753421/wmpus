@@ -41,5 +41,6 @@ int main(int argc, char **argv)
 
 	wm_free();
 	sys_free();
+	conf_free();
 	return 0;
 }

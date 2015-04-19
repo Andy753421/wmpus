@@ -13,6 +13,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  */
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,31 +43,36 @@ static char **conf_argv;
 static char   conf_path[256];
 
 /* Helpers */
-static int conf_cmp(const void *_a, const void *_b)
+static int entry_cmp(const void *_a, const void *_b)
 {
 	const entry_t *a = _a;
 	const entry_t *b = _b;
 	return strcmp(a->key, b->key);
 }
 
-static entry_t *conf_get(const char *key)
+static entry_t *entry_get(const char *key)
 {
 	entry_t try = { .key = (char*)key };
-	entry_t **found = tfind(&try, &conf, conf_cmp);
+	entry_t **found = tfind(&try, &conf, entry_cmp);
 	return found ? *found : NULL;
 }
 
-static void conf_set(const char *key, int num, const char *str)
+static void entry_free(entry_t *entry)
+{
+	free(entry->key);
+	if (entry->type == STRING)
+		free(entry->str);
+	free(entry);
+}
+
+static void entry_set(const char *key, int num, const char *str)
 {
 	entry_t *entry;
 
 	/* Free old item */
-	if ((entry = conf_get(key))) {
-		tdelete(entry, &conf, conf_cmp);
-		free(entry->key);
-		if (entry->type == STRING)
-			free(entry->str);
-		free(entry);
+	if ((entry = entry_get(key))) {
+		tdelete(entry, &conf, entry_cmp);
+		entry_free(entry);
 	}
 
 	/* Insert new item */
@@ -81,7 +87,7 @@ static void conf_set(const char *key, int num, const char *str)
 		entry->num  = num;
 		//printf("set_num: %s = %d\n", key, num);
 	}
-	tsearch(entry, &conf, conf_cmp);
+	tsearch(entry, &conf, entry_cmp);
 }
 
 static char *strtrim(char *str)
@@ -225,26 +231,26 @@ static void load_args(int argc, char **argv)
 /* Configuration file functions */
 int conf_get_int(const char *key, int def)
 {
-	entry_t *entry = conf_get(key);
+	entry_t *entry = entry_get(key);
 	return entry && entry->type == NUMBER
 		? entry->num : def;
 }
 
 void conf_set_int(const char *key, int value)
 {
-	conf_set(key, value, NULL);
+	entry_set(key, value, NULL);
 }
 
 const char *conf_get_str(const char *key, const char *def)
 {
-	entry_t *entry = conf_get(key);
+	entry_t *entry = entry_get(key);
 	return entry && entry->type == STRING
 		? entry->str : def;
 }
 
 void conf_set_str(const char *key, const char *value)
 {
-	conf_set(key, 0, value);
+	entry_set(key, 0, value);
 }
 
 void conf_reload(void)
@@ -265,4 +271,5 @@ void conf_init(int argc, char **argv)
 
 void conf_free(void)
 {
+	tdestroy(conf, (void(*)(void*))entry_free);
 }
