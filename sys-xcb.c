@@ -52,13 +52,6 @@ struct win_sys {
 	int managed;             // window is managed by wm
 };
 
-typedef enum {
-	CLR_FOCUS,
-	CLR_UNFOCUS,
-	CLR_URGENT,
-	NCOLORS
-} color_t;
-
 /* Global data */
 static xcb_connection_t      *conn;
 static xcb_ewmh_connection_t  ewmh;
@@ -68,10 +61,14 @@ static xcb_window_t           root;
 static xcb_event_mask_t       events;
 static list_t                *screens;
 static void                  *cache;
-static xcb_pixmap_t           colors[NCOLORS];
 static unsigned int           grabbed;
 static int                    running;
 static xcb_window_t           control;
+
+static xcb_pixmap_t           clr_focus;
+static xcb_pixmap_t           clr_unfocus;
+static xcb_pixmap_t           clr_urgent;
+
 static xcb_atom_t             wm_protos;
 static xcb_atom_t             wm_delete;
 
@@ -647,7 +644,7 @@ static void on_focus_in(xcb_focus_in_event_t *event)
 		return;
 	printf("on_focus_in:          xcb=%-8u mode=%d\n", event->event, event->mode);
 	xcb_change_window_attributes(conn, event->event,
-			XCB_CW_BORDER_PIXEL, &colors[CLR_FOCUS]);
+			XCB_CW_BORDER_PIXEL, &clr_focus);
 	if (event->mode == XCB_NOTIFY_MODE_NORMAL)
 		send_event(EV_FOCUS, event->event);
 }
@@ -659,7 +656,7 @@ static void on_focus_out(xcb_focus_out_event_t *event)
 		return;
 	printf("on_focus_out:         xcb=%-8u mode=%d\n", event->event, event->mode);
 	xcb_change_window_attributes(conn, event->event,
-			XCB_CW_BORDER_PIXEL, &colors[CLR_UNFOCUS]);
+			XCB_CW_BORDER_PIXEL, &clr_unfocus);
 	if (event->mode == XCB_NOTIFY_MODE_NORMAL)
 		send_event(EV_UNFOCUS, event->event);
 }
@@ -1110,9 +1107,9 @@ void sys_init(void)
 		error("cannot allocate key symbols");
 
 	/* Read color information */
-	colors[CLR_FOCUS]   = do_alloc_color(0xFF6060);
-	colors[CLR_UNFOCUS] = do_alloc_color(0xD8D8FF);
-	colors[CLR_URGENT]  = do_alloc_color(0xFF0000);
+	clr_focus   = do_alloc_color(0xFF6060);
+	clr_unfocus = do_alloc_color(0xD8D8FF);
+	clr_urgent  = do_alloc_color(0xFF0000);
 }
 
 void sys_run(void)
