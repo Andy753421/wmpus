@@ -737,10 +737,12 @@ static void on_configure_request(xcb_configure_request_event_t *event)
 			event->x, event->y);
 	if (!win) return;
 
-	win->x = event->x;
-	win->y = event->y;
-	win->w = event->width;
-	win->h = event->height;
+	if (!win->sys->managed) {
+		win->x = event->x;
+		win->y = event->y;
+		win->w = event->width;
+		win->h = event->height;
+	}
 
 	xcb_configure_notify_event_t resp = {
 		.response_type = XCB_CONFIGURE_NOTIFY,
