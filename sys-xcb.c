@@ -70,6 +70,8 @@ static list_t                *screens;
 static void                  *cache;
 static xcb_pixmap_t           colors[NCOLORS];
 static unsigned int           grabbed;
+static int                    running;
+static xcb_window_t           control;
 static xcb_atom_t             wm_protos;
 static xcb_atom_t             wm_delete;
 
@@ -731,6 +733,15 @@ static void on_configure_request(xcb_configure_request_event_t *event)
 			(const char *)&resp);
 }
 
+static void on_client_message(xcb_client_message_event_t *event)
+{
+	printf("on_client_message: xcb=%-8u\n", event->window);
+	if (event->window         == control   &&
+	    event->type           == wm_protos &&
+	    event->data.data32[0] == wm_delete)
+		running = 0;
+}
+
 /* Generic Event */
 static void on_event(xcb_generic_event_t *event)
 {
@@ -784,6 +795,9 @@ static void on_event(xcb_generic_event_t *event)
 			break;
 		case XCB_CONFIGURE_REQUEST:
 			on_configure_request((xcb_configure_request_event_t *)event);
+			break;
+		case XCB_CLIENT_MESSAGE:
+			on_client_message((xcb_client_message_event_t *)event);
 			break;
 
 		/* Unknown events */
@@ -1005,6 +1019,9 @@ void sys_init(void)
 {
 	printf("sys_init\n");
 
+	xcb_void_cookie_t cookie;
+	xcb_generic_error_t *err;
+
 	/* Load configuration */
 	stack      = conf_get_int("main.stack",      stack);
 	border     = conf_get_int("main.border",     border);
@@ -1022,6 +1039,14 @@ void sys_init(void)
 	root     = iter.data->root;
 	colormap = iter.data->default_colormap;
 
+	/* Request substructure redirect */
+	events = XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+	         XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+	cookie = xcb_change_window_attributes_checked(conn, root,
+			XCB_CW_EVENT_MASK, &events);
+	if ((err = xcb_request_check(conn, cookie)))
+		error("another window manager is already running");
+
 	/* Setup X Atoms */
 	wm_protos = do_intern_atom("WM_PROTOCOLS");
 	wm_delete = do_intern_atom("WM_DELETE_WINDOW");
@@ -1031,6 +1056,19 @@ void sys_init(void)
 	/* Setup EWMH connection */
 	if (!do_ewmh_init_atoms())
 		error("ewmh setup failed");
+
+	/* Set EWMH wm window */
+	control = xcb_generate_id(conn);
+	cookie  = xcb_create_window_checked(conn, 0, control, root,
+			0, 0, 1, 1, 0, 0, 0, 0, NULL);
+	if ((err = xcb_request_check(conn, cookie)))
+		error("can't create control window");
+	cookie = xcb_ewmh_set_wm_name_checked(&ewmh, control, 5, "wmpus");
+	if ((err = xcb_request_check(conn, cookie)))
+		error("can't set wm name");
+	cookie = xcb_ewmh_set_supporting_wm_check_checked(&ewmh, root, control);
+	if ((err = xcb_request_check(conn, cookie)))
+		error("can't set control window");
 
 	/* Setup for for ST_CLOSE */
 	xcb_set_close_down_mode(conn, XCB_CLOSE_DOWN_DESTROY_ALL);
@@ -1043,16 +1081,6 @@ void sys_init(void)
 	colors[CLR_FOCUS]   = do_alloc_color(0xFF6060);
 	colors[CLR_UNFOCUS] = do_alloc_color(0xD8D8FF);
 	colors[CLR_URGENT]  = do_alloc_color(0xFF0000);
-
-	/* Request substructure redirect */
-	xcb_void_cookie_t cookie;
-	xcb_generic_error_t *err;
-	events = XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-		 XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
-	cookie = xcb_change_window_attributes_checked(conn, root,
-			XCB_CW_EVENT_MASK, &events);
-	if ((err = xcb_request_check(conn, cookie)))
-		error("another window manager is already running");
 }
 
 void sys_run(void)
@@ -1080,7 +1108,8 @@ void sys_run(void)
 	}
 
 	/* Main loop */
-	while (1)
+	running = 1;
+	while (running)
 	{
 		int status;
 		xcb_generic_event_t *event;
@@ -1096,17 +1125,36 @@ void sys_run(void)
 void sys_exit(void)
 {
 	printf("sys_exit\n");
-	if (conn)
-		xcb_disconnect(conn);
-	conn = NULL;
+
+	xcb_client_message_event_t msg = {
+		.response_type  = XCB_CLIENT_MESSAGE,
+		.format         = 32,
+		.window         = control,
+		.type           = wm_protos,
+		.data.data32[0] = wm_delete,
+		.data.data32[1] = XCB_CURRENT_TIME,
+	};
+	xcb_send_event(conn, 0, control, XCB_EVENT_MASK_NO_EVENT,
+			(const char *)&msg);
+	xcb_flush(conn);
 }
 
 void sys_free(void)
 {
 	printf("sys_free\n");
-	if (conn) {
-		xcb_ewmh_connection_wipe(&ewmh);
-		xcb_disconnect(conn);
-	}
-	conn = NULL;
+
+	xcb_void_cookie_t cookie;
+	xcb_generic_error_t *err;
+
+	cookie = xcb_delete_property_checked(conn, root,
+			ewmh._NET_SUPPORTING_WM_CHECK);
+	if ((err = xcb_request_check(conn, cookie)))
+		warn("can't remove control window");
+
+	cookie = xcb_destroy_window_checked(conn, control);
+	if ((err = xcb_request_check(conn, cookie)))
+		warn("can't destroy control window");
+
+	xcb_ewmh_connection_wipe(&ewmh);
+	xcb_disconnect(conn);
 }
