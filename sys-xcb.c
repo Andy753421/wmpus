@@ -22,6 +22,7 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_event.h>
 #include <xcb/xcb_keysyms.h>
+#include <xcb/xcb_icccm.h>
 #include <xcb/xcb_ewmh.h>
 #include <xcb/xinerama.h>
 
@@ -69,6 +70,8 @@ static list_t                *screens;
 static void                  *cache;
 static xcb_pixmap_t           colors[NCOLORS];
 static unsigned int           grabbed;
+static xcb_atom_t             wm_protos;
+static xcb_atom_t             wm_delete;
 
 /************************
  * Conversion functions *
@@ -330,6 +333,21 @@ static int do_get_input_focus(void)
 	return reply->focus;
 }
 
+static xcb_atom_t do_intern_atom(const char *name)
+{
+	xcb_intern_atom_cookie_t cookie =
+		xcb_intern_atom(conn, 0, strlen(name), name);
+	if (!cookie.sequence)
+		return warn("do_intern_atom: bad cookie");
+
+	xcb_intern_atom_reply_t *reply =
+		xcb_intern_atom_reply(conn, cookie, NULL);
+	if (!reply)
+		return warn("do_intern_atom: no reply");
+
+	return reply->atom;
+}
+
 static int do_ewmh_init_atoms(void)
 {
 	xcb_intern_atom_cookie_t *cookies =
@@ -425,6 +443,40 @@ static void do_configure_window(xcb_window_t win,
 	}
 
 	xcb_configure_window(conn, win, mask, list);
+}
+
+static int do_client_message(xcb_window_t win, xcb_atom_t atom)
+{
+	/* Get protocols */
+	xcb_get_property_cookie_t cookie =
+		xcb_icccm_get_wm_protocols(conn, win, wm_protos);
+	if (!cookie.sequence)
+		return warn("do_client_message: %d - bad cookie", win);
+
+	xcb_icccm_get_wm_protocols_reply_t protos = {};
+	if (!xcb_icccm_get_wm_protocols_reply(conn, cookie, &protos, NULL))
+		return warn("do_client_message: %d - no reply", win);
+
+	/* Search for the atom */
+	int found = 0;
+	for (int i = 0; i < protos.atoms_len; i++)
+		if (protos.atoms[i] == atom)
+			found = 1;
+	if (!found)
+		return warn("do_client_message: %d - no atom", win);
+
+	/* Send the message */
+	xcb_client_message_event_t msg = {
+		.response_type  = XCB_CLIENT_MESSAGE,
+		.format         = 32,
+		.window         = win,
+		.type           = wm_protos,
+		.data.data32[0] = atom,
+		.data.data32[1] = XCB_CURRENT_TIME,
+	};
+	xcb_send_event(conn, 0, win, XCB_EVENT_MASK_NO_EVENT,
+			(const char *)&msg);
+	return 1;
 }
 
 /**************************
@@ -839,7 +891,8 @@ void sys_show(win_t *win, state_t state)
 			break;
 
 		case ST_CLOSE:
-			xcb_kill_client(conn, xcb);
+			if (!do_client_message(xcb, wm_delete))
+				xcb_kill_client(conn, xcb);
 			break;
 	}
 
@@ -964,6 +1017,12 @@ void sys_init(void)
 	xcb_screen_iterator_t  iter  = xcb_setup_roots_iterator(setup);
 	root     = iter.data->root;
 	colormap = iter.data->default_colormap;
+
+	/* Setup X Atoms */
+	wm_protos = do_intern_atom("WM_PROTOCOLS");
+	wm_delete = do_intern_atom("WM_DELETE_WINDOW");
+	if (!wm_protos || !wm_delete)
+		error("unable to setup atoms");
 
 	/* Setup EWMH connection */
 	if (!do_ewmh_init_atoms())
