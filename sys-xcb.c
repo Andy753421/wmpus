@@ -217,26 +217,54 @@ static win_t *win_get(xcb_window_t xcb)
 	return *win;
 }
 
+static win_t *win_new(xcb_window_t xcb)
+{
+	win_t *win = new0(win_t);
+	win->sys = new0(win_sys_t);
+	win->sys->xcb = xcb;
+
+	win_t **old = tfind(win, &cache, win_cmp);
+	if (old) {
+		warn("duplicate window for %u\n", xcb);
+		free(win->sys);
+		free(win);
+		return *old;
+	}
+
+	tsearch(win, &cache, win_cmp);
+	printf("win_new: xcb=%-8u -> win=%p\n",
+			win->sys->xcb, win);
+	return win;
+}
+
+static void win_free(win_t *win)
+{
+	printf("win_free: xcb=%-8u -> win=%p\n",
+			win->sys->xcb, win);
+	free(win->sys);
+	free(win);
+}
+
 /****************
  * XCB Wrappers *
  ****************/
 
-static int do_query_tree(xcb_window_t win, xcb_window_t **kids)
+static void *do_query_tree(xcb_window_t win, xcb_window_t **kids, int *nkids)
 {
 	xcb_query_tree_cookie_t cookie =
 		xcb_query_tree(conn, win);
 	if (!cookie.sequence)
-		return warn("do_query_tree: %d - bad cookie", win);
+		return warn("do_query_tree: %d - bad cookie", win), NULL;
 
 	xcb_query_tree_reply_t *reply =
 		xcb_query_tree_reply(conn, cookie, NULL);
 	if (!reply)
-		return warn("do_query_tree: %d - no reply", win);
+		return warn("do_query_tree: %d - no reply", win), NULL;
 
-	int nkids = xcb_query_tree_children_length(reply);
-	*kids = xcb_query_tree_children(reply);
-	printf("do_query_tree: %d - n=%d\n", win, nkids);
-	return nkids;
+	*nkids = xcb_query_tree_children_length(reply);
+	*kids  = xcb_query_tree_children(reply);
+	printf("do_query_tree: %d - n=%d\n", win, *nkids);
+	return reply;
 }
 
 static int do_get_geometry(xcb_window_t win,
@@ -258,6 +286,7 @@ static int do_get_geometry(xcb_window_t win,
 	*y = reply->y;
 	*w = reply->width;
 	*h = reply->height;
+	free(reply);
 	return 1;
 }
 
@@ -278,6 +307,7 @@ static int do_get_window_attributes(xcb_window_t win,
 			win, reply->override_redirect);
 	*override = reply->override_redirect;
 	*mapped   = reply->map_state != XCB_MAP_STATE_UNMAPPED;
+	free(reply);
 	return 1;
 }
 
@@ -296,28 +326,30 @@ static int do_xinerama_check(void)
 	xcb_xinerama_is_active_reply_t *reply =
 		xcb_xinerama_is_active_reply(conn, cookie, NULL);
 	if (!reply)
-		warn("do_xinerama_check: no reply");
+		return warn("do_xinerama_check: no reply");
 
 	printf("do_xinerama_check: %d\n", reply->state);
-	return reply && reply->state;
+	int state = reply->state;
+	free(reply);
+	return state;
 }
 
-static int do_query_screens(xcb_xinerama_screen_info_t **info)
+static void *do_query_screens(xcb_xinerama_screen_info_t **info, int *ninfo)
 {
 	xcb_xinerama_query_screens_cookie_t cookie =
 		xcb_xinerama_query_screens(conn);
 	if (!cookie.sequence)
-		return warn("do_query_screens: bad cookie");
+		return warn("do_query_screens: bad cookie"), NULL;
 
 	xcb_xinerama_query_screens_reply_t *reply =
 		xcb_xinerama_query_screens_reply(conn, cookie, NULL);
 	if (!reply)
-		return warn("do_query_screens: no reply");
+		return warn("do_query_screens: no reply"), NULL;
 
-	int ninfo = xcb_xinerama_query_screens_screen_info_length(reply);
-	*info = xcb_xinerama_query_screens_screen_info(reply);
-	printf("do_query_screens: %d screens\n", ninfo);
-	return ninfo;
+	*ninfo = xcb_xinerama_query_screens_screen_info_length(reply);
+	*info  = xcb_xinerama_query_screens_screen_info(reply);
+	printf("do_query_screens: %d screens\n", *ninfo);
+	return reply;
 }
 
 static int do_get_input_focus(void)
@@ -332,7 +364,9 @@ static int do_get_input_focus(void)
 	if (!reply)
 		return warn("do_get_input_focus: no reply");
 
-	return reply->focus;
+	int focus = reply->focus;
+	free(reply);
+	return focus;
 }
 
 static xcb_atom_t do_intern_atom(const char *name)
@@ -468,6 +502,7 @@ static int do_client_message(xcb_window_t win, xcb_atom_t atom)
 	for (int i = 0; i < protos.atoms_len; i++)
 		if (protos.atoms[i] == atom)
 			found = 1;
+	xcb_icccm_get_wm_protocols_reply_wipe(&protos);
 	if (!found)
 		return warn("do_client_message: %d - no atom", win);
 
@@ -631,24 +666,17 @@ static void on_focus_out(xcb_focus_out_event_t *event)
 
 static void on_create_notify(xcb_create_notify_event_t *event)
 {
-	win_t     *win = new0(win_t);
-	win_sys_t *sys = new0(win_sys_t);
+	printf("on_create_notify:     xcb=%-8u\n", event->window);
 
-	printf("on_create_notify:     xcb=%-8u -> win=%p\n",
-			event->window, win);
+	win_t *win = win_new(event->window);
 
-	win->x        = event->x;
-	win->y        = event->y;
-	win->w        = event->width;
-	win->h        = event->height;
-	win->sys      = sys;
-
-	sys->xcb      = event->window;
+	win->x = event->x;
+	win->y = event->y;
+	win->w = event->width;
+	win->h = event->height;
 
 	if (!event->override_redirect)
 		send_manage(win, 1);
-
-	tsearch(win, &cache, win_cmp);
 }
 
 static void on_destroy_notify(xcb_destroy_notify_event_t *event)
@@ -659,11 +687,8 @@ static void on_destroy_notify(xcb_destroy_notify_event_t *event)
 	if (!win) return;
 
 	send_manage(win, 0);
-
 	tdelete(win, &cache, win_cmp);
-
-	free(win->sys);
-	free(win);
+	win_free(win);
 }
 
 static void on_unmap_notify(xcb_unmap_notify_event_t *event)
@@ -962,7 +987,7 @@ void sys_watch(win_t *win, event_t ev, mod_t mod)
 				xcb_grab_key(conn, 1, xcb, mods, code[i],
 						XCB_GRAB_MODE_ASYNC,
 						XCB_GRAB_MODE_ASYNC);
-
+			free(code);
 			break;
 	}
 }
@@ -978,8 +1003,9 @@ list_t *sys_info(void)
 
 	if (screens == NULL && do_xinerama_check()) {
 		/* Add Xinerama screens */
+		int ninfo = 0;
 		xcb_xinerama_screen_info_t *info = NULL;
-		int ninfo = do_query_screens(&info);
+		void *reply = do_query_screens(&info, &ninfo);
 		for (int i = 0; i < ninfo; i++) {
 			win_t *screen = new0(win_t);
 
@@ -994,6 +1020,7 @@ list_t *sys_info(void)
 					screen->w, screen->h,
 					screen->x, screen->y);
 		}
+		free(reply);
 	}
 
 	if (screens == NULL) {
@@ -1058,9 +1085,12 @@ void sys_init(void)
 		error("ewmh setup failed");
 
 	/* Set EWMH wm window */
+	uint32_t override = 1;
 	control = xcb_generate_id(conn);
+	printf("control window: %d\n", control);
 	cookie  = xcb_create_window_checked(conn, 0, control, root,
-			0, 0, 1, 1, 0, 0, 0, 0, NULL);
+			0, 0, 1, 1, 0, 0, 0,
+			XCB_CW_OVERRIDE_REDIRECT, &override);
 	if ((err = xcb_request_check(conn, cookie)))
 		error("can't create control window");
 	cookie = xcb_ewmh_set_wm_name_checked(&ewmh, control, 5, "wmpus");
@@ -1089,21 +1119,26 @@ void sys_run(void)
 
 	/* Add each initial window */
 	if (!no_capture) {
+		int nkids = 0;
 		xcb_window_t *kids = NULL;
-		int nkids = do_query_tree(root, &kids);
+		void *reply = do_query_tree(root, &kids, &nkids);
 		for(int i = 0; i < nkids; i++) {
 			int override=0, mapped=0;
-			win_t *win = new0(win_t);
-			win->sys = new0(win_sys_t);
-			win->sys->xcb = kids[i];
-			tsearch(win, &cache, win_cmp);
+			if (kids[i] == control)
+				continue;
+			win_t *win = win_new(kids[i]);
 			do_get_geometry(kids[i], &win->x, &win->y, &win->w, &win->h);
 			do_get_window_attributes(kids[i], &override, &mapped);
+			printf("  found %-8u %dx%d @ %d,%d --%s%s\n", kids[i],
+					win->w, win->h, win->x, win->y,
+					override ? " override" : "",
+					mapped   ? " mapped"   : "");
 			if (!override)
 				send_manage(win, 1);
 			if (mapped)
 				send_state(win, ST_SHOW);
 		}
+		free(reply);
 		xcb_flush(conn);
 	}
 
@@ -1146,6 +1181,7 @@ void sys_free(void)
 	xcb_void_cookie_t cookie;
 	xcb_generic_error_t *err;
 
+	/* unregister wm */ 
 	cookie = xcb_delete_property_checked(conn, root,
 			ewmh._NET_SUPPORTING_WM_CHECK);
 	if ((err = xcb_request_check(conn, cookie)))
@@ -1155,6 +1191,13 @@ void sys_free(void)
 	if ((err = xcb_request_check(conn, cookie)))
 		warn("can't destroy control window");
 
+	/* close connection */
 	xcb_ewmh_connection_wipe(&ewmh);
+	xcb_key_symbols_free(keysyms);
 	xcb_disconnect(conn);
+
+	/* free local data */
+	while (screens)
+		screens = list_remove(screens, screens, 1);
+	tdestroy(cache, (void(*)(void*))win_free);
 }
