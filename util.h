@@ -58,6 +58,8 @@ list_t *list_find(list_t *list, void *data);
 list_t *list_sort(list_t *list, int rev, int (*func)(void*,void*));
 
 /* Misc */
+int residual(float num, float *state);
+
 int str2num(char *str, int def);
 
 int warn(char *fmt, ...);

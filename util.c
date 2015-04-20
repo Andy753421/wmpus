@@ -126,6 +126,14 @@ list_t *list_sort(list_t *list, int rev, int (*func)(void *a, void*b))
 }
 
 /* Misc */
+int residual(float num, float *state)
+{
+	float f = num + *state;
+	int   i = (int)(f+0.5);
+	*state = f - i;
+	return i;
+}
+
 int str2num(char *str, int def)
 {
 	char *end = NULL;

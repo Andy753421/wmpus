@@ -617,13 +617,15 @@ static void wm_update_cols(dpy_t *dpy)
 	int mx=0, my=0; // Maximum usable size (screen size minus margins)
 	int       sy=0; // Stack size (height of focused stack window)
 
+	float rx=0, ry=0; // Residuals for floating point round off
+
 	/* Scale horizontally */
 	x  = dpy->geom->x;
 	mx = dpy->geom->w - (list_length(dpy->cols)+1)*margin;
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next)
 		tx += COL(lcol)->width;
 	for (list_t *lcol = dpy->cols; lcol; lcol = lcol->next)
-		COL(lcol)->width *= (float)mx / tx;
+		COL(lcol)->width = residual(COL(lcol)->width * (float)mx/tx, &rx);
 
 	/* Scale each column vertically */
 	win_t *focus = get_focus();
@@ -645,13 +647,11 @@ static void wm_update_cols(dpy_t *dpy)
 			}
 			win->h = ROW(lrow)->height;
 			state_t state = ST_SHOW;
-			int height = 0;
 			switch (col->layout) {
 			case SPLIT:
-				sys_move(win, x+margin, y+margin,
-					col->width, win->h * ((float)my / ty));
-				height = win->h;
-				y += height + margin;
+				sys_move(win, x+margin, y+margin, col->width,
+					residual(win->h * ((float)my/ty), &ry));
+				y += win->h + margin;
 				break;
 			case STACK:
 				if (lrow->next && ROW(lrow->next)->win == col->row->win) {
