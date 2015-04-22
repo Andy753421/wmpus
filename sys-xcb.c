@@ -278,39 +278,39 @@ static void win_del_strut(win_t *win)
  * XCB Wrappers *
  ****************/
 
-static void *do_query_tree(xcb_window_t win, xcb_window_t **kids, int *nkids)
+static void *do_query_tree(xcb_window_t xcb, xcb_window_t **kids, int *nkids)
 {
 	xcb_query_tree_cookie_t cookie =
-		xcb_query_tree(conn, win);
+		xcb_query_tree(conn, xcb);
 	if (!cookie.sequence)
-		return warn("do_query_tree: %d - bad cookie", win), NULL;
+		return warn("do_query_tree: %d - bad cookie", xcb), NULL;
 
 	xcb_query_tree_reply_t *reply =
 		xcb_query_tree_reply(conn, cookie, NULL);
 	if (!reply)
-		return warn("do_query_tree: %d - no reply", win), NULL;
+		return warn("do_query_tree: %d - no reply", xcb), NULL;
 
 	*nkids = xcb_query_tree_children_length(reply);
 	*kids  = xcb_query_tree_children(reply);
-	printf("do_query_tree: %d - n=%d\n", win, *nkids);
+	printf("do_query_tree: %d - n=%d\n", xcb, *nkids);
 	return reply;
 }
 
-static int do_get_geometry(xcb_window_t win,
+static int do_get_geometry(xcb_window_t xcb,
 		int *x, int *y, int *w, int *h)
 {
 	xcb_get_geometry_cookie_t cookie =
-		xcb_get_geometry(conn, win);
+		xcb_get_geometry(conn, xcb);
 	if (!cookie.sequence)
-		return warn("do_get_geometry: %d - bad cookie", win);
+		return warn("do_get_geometry: %d - bad cookie", xcb);
 
 	xcb_get_geometry_reply_t *reply =
 		xcb_get_geometry_reply(conn, cookie, NULL);
 	if (!reply)
-		return warn("do_get_geometry: %d - no reply", win);
+		return warn("do_get_geometry: %d - no reply", xcb);
 
 	printf("do_get_geometry: %d - %dx%d @ %d,%d\n",
-			win, reply->width, reply->height, reply->x, reply->y);
+			xcb, reply->width, reply->height, reply->x, reply->y);
 	*x = reply->x;
 	*y = reply->y;
 	*w = reply->width;
@@ -319,21 +319,21 @@ static int do_get_geometry(xcb_window_t win,
 	return 1;
 }
 
-static int do_get_window_attributes(xcb_window_t win,
+static int do_get_window_attributes(xcb_window_t xcb,
 		int *override, int *mapped)
 {
 	xcb_get_window_attributes_cookie_t cookie =
-		xcb_get_window_attributes(conn, win);
+		xcb_get_window_attributes(conn, xcb);
 	if (!cookie.sequence)
-		return warn("do_get_window_attributes: %d - bad cookie", win);
+		return warn("do_get_window_attributes: %d - bad cookie", xcb);
 
 	xcb_get_window_attributes_reply_t *reply =
 		xcb_get_window_attributes_reply(conn, cookie, NULL);
 	if (!reply)
-		return warn("do_get_window_attributes: %d - no reply ", win);
+		return warn("do_get_window_attributes: %d - no reply ", xcb);
 
 	printf("do_get_window_attributes: %d - %d\n",
-			win, reply->override_redirect);
+			xcb, reply->override_redirect);
 	*override = reply->override_redirect;
 	*mapped   = reply->map_state != XCB_MAP_STATE_UNMAPPED;
 	free(reply);
@@ -429,10 +429,10 @@ static int do_ewmh_init_atoms(void)
 	return status;
 }
 
-static int do_get_strut(xcb_window_t win, strut_t *strut)
+static int do_get_strut(xcb_window_t xcb, strut_t *strut)
 {
 	xcb_get_property_cookie_t cookie =
-		xcb_ewmh_get_wm_strut(&ewmh, win);
+		xcb_ewmh_get_wm_strut(&ewmh, xcb);
 	if (!cookie.sequence)
 		return warn("do_get_strut: bad cookie");
 
@@ -488,7 +488,7 @@ static void do_ungrab_pointer(void)
 		xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
 }
 
-static void do_configure_window(xcb_window_t win,
+static void do_configure_window(xcb_window_t xcb,
 		int x, int y, int w, int h,
 		int b, int s, int r)
 {
@@ -511,20 +511,20 @@ static void do_configure_window(xcb_window_t win,
 		}
 	}
 
-	xcb_configure_window(conn, win, mask, list);
+	xcb_configure_window(conn, xcb, mask, list);
 }
 
-static int do_client_message(xcb_window_t win, xcb_atom_t atom)
+static int do_client_message(xcb_window_t xcb, xcb_atom_t atom)
 {
 	/* Get protocols */
 	xcb_get_property_cookie_t cookie =
-		xcb_icccm_get_wm_protocols(conn, win, wm_protos);
+		xcb_icccm_get_wm_protocols(conn, xcb, wm_protos);
 	if (!cookie.sequence)
-		return warn("do_client_message: %d - bad cookie", win);
+		return warn("do_client_message: %d - bad cookie", xcb);
 
 	xcb_icccm_get_wm_protocols_reply_t protos = {};
 	if (!xcb_icccm_get_wm_protocols_reply(conn, cookie, &protos, NULL))
-		return warn("do_client_message: %d - no reply", win);
+		return warn("do_client_message: %d - no reply", xcb);
 
 	/* Search for the atom */
 	int found = 0;
@@ -533,18 +533,18 @@ static int do_client_message(xcb_window_t win, xcb_atom_t atom)
 			found = 1;
 	xcb_icccm_get_wm_protocols_reply_wipe(&protos);
 	if (!found)
-		return warn("do_client_message: %d - no atom", win);
+		return warn("do_client_message: %d - no atom", xcb);
 
 	/* Send the message */
 	xcb_client_message_event_t msg = {
 		.response_type  = XCB_CLIENT_MESSAGE,
 		.format         = 32,
-		.window         = win,
+		.window         = xcb,
 		.type           = wm_protos,
 		.data.data32[0] = atom,
 		.data.data32[1] = XCB_CURRENT_TIME,
 	};
-	xcb_send_event(conn, 0, win, XCB_EVENT_MASK_NO_EVENT,
+	xcb_send_event(conn, 0, xcb, XCB_EVENT_MASK_NO_EVENT,
 			(const char *)&msg);
 	return 1;
 }
