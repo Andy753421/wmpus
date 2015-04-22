@@ -504,10 +504,10 @@ static void do_configure_window(xcb_window_t xcb,
 
 	uint16_t mask    = 0;
 	uint32_t list[7] = {};
-	for (int i = 0; i < 7; i++) {
+	for (int i=0,j=0; i < 7; i++) {
 		if (table[i][0] >= 0) {
-			list[i] = table[i][0];
-			mask   |= table[i][1];
+			list[j++] = table[i][0];
+			mask     |= table[i][1];
 		}
 	}
 
@@ -893,6 +893,9 @@ void sys_raise(win_t *win)
 	uint32_t list = XCB_STACK_MODE_ABOVE;
 
 	xcb_configure_window(conn, win->sys->xcb, mask, &list);
+	for (list_t *cur = struts; cur; cur = cur->next)
+		xcb_configure_window(conn,
+			((win_t*)cur->data)->sys->xcb, mask, &list);
 }
 
 void sys_focus(win_t *win)
@@ -911,12 +914,12 @@ void sys_show(win_t *win, state_t state)
 	xcb_window_t xcb = win ? win->sys->xcb : root;
 
 	/* Find screen */
-	win_t *screen = NULL;
+	win_t full, max;
 	if (state == ST_FULL || state == ST_MAX) {
 		for (list_t *cur = screens; cur; cur = cur->next) {
-			screen = cur->data;
-			if (win->x >= screen->x && win->x <= screen->x+screen->w &&
-			    win->y >= screen->y && win->y <= screen->y+screen->h)
+			full = max = *(win_t*)cur->data;
+			if (win->x >= max.x && win->x <= max.x+max.w &&
+			    win->y >= max.y && win->y <= max.y+max.h)
 				break;
 		}
 	}
@@ -937,16 +940,15 @@ void sys_show(win_t *win, state_t state)
 
 		case ST_FULL:
 			xcb_map_window(conn, xcb);
-			do_configure_window(xcb, screen->x, screen->y, screen->w, screen->h,
+			do_configure_window(xcb, full.x, full.y, full.w, full.h,
 					0, -1, XCB_STACK_MODE_ABOVE);
-			xcb_circulate_window(conn, XCB_CIRCULATE_RAISE_LOWEST, xcb);
 			break;
 
 		case ST_MAX:
 			xcb_map_window(conn, xcb);
-			do_configure_window(xcb, screen->x, screen->y,
-					MAX(screen->w - 2*border, 1),
-					MAX(screen->h - 2*border, 1),
+			do_configure_window(xcb, max.x, max.y,
+					MAX(max.w - 2*border, 1),
+					MAX(max.h - 2*border, 1),
 					border, -1, XCB_STACK_MODE_ABOVE);
 			break;
 
