@@ -50,6 +50,7 @@ struct win_sys {
 	xcb_event_mask_t events; // currently watch events
 	strut_t          strut;  // toolbar struts
 	state_t          state;  // window state if not mapped
+	xcb_window_t     parent; // transient for window
 	int mapped;              // window is managed by wm
 	int managed;             // window is managed by wm
 };
@@ -536,6 +537,21 @@ static int do_get_strut(xcb_window_t xcb, strut_t *strut)
 	return ext.left || ext.right || ext.top || ext.bottom;
 }
 
+static int do_get_transient(xcb_window_t xcb, xcb_window_t *parent)
+{
+	xcb_get_property_cookie_t cookie;
+
+	cookie = xcb_icccm_get_wm_transient_for(conn, xcb);
+	if (!cookie.sequence)
+		return warn("do_get_transient: bad cookie");
+
+	if (!xcb_icccm_get_wm_transient_for_reply(conn, cookie, parent, NULL))
+		return warn("do_get_transient: no sizes");
+
+	printf("do_get_transient: %d -> %d\n", xcb, *parent);
+	return 1;
+}
+
 static xcb_pixmap_t do_alloc_color(uint32_t rgb)
 {
 	uint16_t r = (rgb & 0xFF0000) >> 8;
@@ -799,6 +815,9 @@ static void on_create_notify(xcb_create_notify_event_t *event)
 
 	if (!event->override_redirect)
 		send_manage(win, 1);
+
+	if (do_get_transient(event->window, &win->sys->parent))
+		win->parent = win_get(win->sys->parent);
 }
 
 static void on_destroy_notify(xcb_destroy_notify_event_t *event)
@@ -903,6 +922,11 @@ static void on_property_notify(xcb_property_notify_event_t *event)
 	if (event->atom == ewmh._NET_WM_STRUT)
 		if (do_get_strut(win->sys->xcb, &win->sys->strut))
 			win_add_strut(win);
+
+	/* Check transient for */
+	if (event->atom == XCB_ATOM_WM_TRANSIENT_FOR)
+		if (do_get_transient(event->window, &win->sys->parent))
+			win->parent = win_get(win->sys->parent);
 
 	/* Check window state */
 	if (event->atom == wm_nhints)
