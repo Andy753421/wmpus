@@ -1239,7 +1239,7 @@ list_t *sys_info(void)
 			screen->w = info[i].width;
 			screen->h = info[i].height;
 
-			screens = list_insert(NULL, screen);
+			screens = list_insert(screens, screen);
 
 			printf("sys_info: xinerama screen - %dx%d @ %d,%d\n",
 					screen->w, screen->h,
@@ -1258,7 +1258,7 @@ list_t *sys_info(void)
 		screen->w = geom->width_in_pixels;
 		screen->h = geom->height_in_pixels;
 
-		screens = list_insert(NULL, screen);
+		screens = list_insert(screens, screen);
 
 		printf("sys_info: root screen - %dx%d\n",
 				screen->w, screen->h);
