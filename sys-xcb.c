@@ -1105,8 +1105,8 @@ void sys_show(win_t *win, state_t state)
 	if (state == ST_FULL || state == ST_MAX) {
 		for (list_t *cur = screens; cur; cur = cur->next) {
 			full = max = *(win_t*)cur->data;
-			if (win->x >= max.x && win->x <= max.x+max.w &&
-			    win->y >= max.y && win->y <= max.y+max.h)
+			if (win->x >= max.x && win->x < max.x+max.w &&
+			    win->y >= max.y && win->y < max.y+max.h)
 				break;
 		}
 		for (list_t *cur = struts; cur; cur = cur->next) {
