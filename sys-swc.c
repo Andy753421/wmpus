@@ -25,6 +25,7 @@
 
 #include "util.h"
 #include "conf.h"
+#include "types.h"
 #include "sys.h"
 #include "wm.h"
 
@@ -203,13 +204,14 @@ void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 			win, ev, mod2int(mod));
 }
 
-list_t *sys_info(win_t *win)
+list_t *sys_info(void)
 {
-	printf("sys_info: %p\n", win);
-	return list_insert(NULL, win);
+	static win_t root;
+	printf("sys_info\n");
+	return list_insert(NULL, &root);
 }
 
-win_t *sys_init(void)
+void sys_init(void)
 {
 	static struct swc_manager manager = {
 		.new_screen = &new_screen,
@@ -238,13 +240,11 @@ win_t *sys_init(void)
 			&cmd_spawn, cmd_term);
 	swc_add_binding(SWC_BINDING_KEY, SWC_MOD_LOGO, XKB_KEY_r,
 			&cmd_spawn, cmd_menu);
-
-	return new0(win_t);
 }
 
-void sys_run(win_t *root)
+void sys_run(void)
 {
-	printf("sys_run: %p\n", root);
+	printf("sys_run\n");
 	wl_display_run(display);
 	wl_display_destroy(display);
 }
@@ -255,7 +255,7 @@ void sys_exit(void)
 	wl_display_terminate(display);
 }
 
-void sys_free(win_t *root)
+void sys_free(void)
 {
-	printf("sys_free: %p\n", root);
+	printf("sys_free\n");
 }

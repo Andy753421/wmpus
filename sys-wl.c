@@ -24,6 +24,7 @@
 
 #include "util.h"
 #include "conf.h"
+#include "types.h"
 #include "sys.h"
 #include "wm.h"
 
@@ -114,13 +115,14 @@ void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 			win, ev, mod2int(mod));
 }
 
-list_t *sys_info(win_t *win)
+list_t *sys_info(void)
 {
-	printf("sys_info: %p\n", win);
-	return list_insert(NULL, win);
+	static win_t root;
+	printf("sys_info\n");
+	return list_insert(NULL, &root);
 }
 
-win_t *sys_init(void)
+void sys_init(void)
 {
 	printf("sys_init\n");
 
@@ -142,13 +144,11 @@ win_t *sys_init(void)
 	(void)cmd_spawn;
 	(void)new_window;
 	(void)new_screen;
-
-	return new0(win_t);
 }
 
-void sys_run(win_t *root)
+void sys_run(void)
 {
-	printf("sys_run: %p\n", root);
+	printf("sys_run\n");
 	wl_display_run(display);
 }
 
@@ -158,7 +158,7 @@ void sys_exit(void)
 	exit(0);
 }
 
-void sys_free(win_t *root)
+void sys_free(void)
 {
-	printf("sys_free: %p\n", root);
+	printf("sys_free\n");
 }

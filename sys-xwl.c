@@ -43,6 +43,7 @@
 
 #include "util.h"
 #include "conf.h"
+#include "types.h"
 #include "sys.h"
 #include "wm.h"
 
@@ -925,7 +926,7 @@ static void xshell_get_xdg_surface(struct wl_client *cli, struct wl_resource *xs
 
 static void xshell_get_xdg_popup(struct wl_client *cli, struct wl_resource *xshell,
 		uint32_t id, struct wl_resource *sfc, struct wl_resource *parent,
-		struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y, uint32_t flags)
+		struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y)
 {
 	win_t *win = wl_resource_get_user_data(sfc);
 	printf("xshell_get_xdg_popup - %p @ %d,%d\n", win, x, y);
@@ -1374,13 +1375,13 @@ void sys_unwatch(win_t *win, event_t ev, mod_t mod)
 			win, ev, mod2int(mod));
 }
 
-list_t *sys_info(win_t *win)
+list_t *sys_info(void)
 {
-	printf("sys_info: %p\n", win);
-	return list_insert(NULL, win);
+	printf("sys_info\n");
+	return list_insert(NULL, root);
 }
 
-win_t *sys_init(void)
+void sys_init(void)
 {
 	printf("sys_init\n");
 
@@ -1419,7 +1420,7 @@ win_t *sys_init(void)
 	/* Register interfaces */
 	ref_shm    = wl_global_create(display, &wl_shm_interface,                 1, NULL, &bind_shm);
 	ref_output = wl_global_create(display, &wl_output_interface,              2, NULL, &bind_output);
-	ref_ddm    = wl_global_create(display, &wl_data_device_manager_interface, 1, NULL, &bind_ddm);
+	ref_ddm    = wl_global_create(display, &wl_data_device_manager_interface, 2, NULL, &bind_ddm);
 	ref_shell  = wl_global_create(display, &wl_shell_interface,               1, NULL, &bind_shell);
 	ref_comp   = wl_global_create(display, &wl_compositor_interface,          3, NULL, &bind_comp);
 	ref_seat   = wl_global_create(display, &wl_seat_interface,                4, NULL, &bind_seat);
@@ -1428,6 +1429,7 @@ win_t *sys_init(void)
 	ref_drm    = wl_global_create(display, &wl_drm_interface,                 2, NULL, &bind_drm);
 
 	/* Setup GTK display */
+	setenv("GDK_BACKEND", "x11", 1);
 	gtk_init(&conf_argc, &conf_argv);
 	screen = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_widget_add_events(screen,
@@ -1445,16 +1447,12 @@ win_t *sys_init(void)
 	g_signal_connect(screen, "draw",                 G_CALLBACK(on_draw),    NULL);
 	g_timeout_add(1000/60, on_wayland, NULL);
 	gtk_widget_show(screen);
-
-	/* Setup environment */
 	setenv("GDK_BACKEND", "wayland", 1);
-
-	return root;
 }
 
-void sys_run(win_t *root)
+void sys_run(void)
 {
-	printf("sys_run: %p\n", root);
+	printf("sys_run\n");
 	gtk_main();
 }
 
@@ -1464,8 +1462,8 @@ void sys_exit(void)
 	gtk_main_quit();
 }
 
-void sys_free(win_t *root)
+void sys_free(void)
 {
-	printf("sys_free: %p\n", root);
+	printf("sys_free\n");
 }
 
