@@ -49,6 +49,8 @@ struct win_sys {
 	xcb_window_t     xcb;    // xcb window id
 	xcb_event_mask_t events; // currently watch events
 	strut_t          strut;  // toolbar struts
+	state_t          state;  // window state if not mapped
+	int mapped;              // window is managed by wm
 	int managed;             // window is managed by wm
 };
 
@@ -72,6 +74,7 @@ static xcb_pixmap_t           clr_urgent;
 
 static xcb_atom_t             wm_protos;
 static xcb_atom_t             wm_delete;
+static xcb_atom_t             wm_nhints;
 
 /************************
  * Conversion functions *
@@ -415,6 +418,25 @@ static xcb_atom_t do_intern_atom(const char *name)
 	return atom;
 }
 
+static char *do_get_atom_name(xcb_atom_t atom)
+{
+	xcb_get_atom_name_cookie_t cookie =
+		xcb_get_atom_name(conn, atom);
+	if (!cookie.sequence)
+		return warn("do_get_atom_name: bad cookie"), NULL;
+
+	xcb_get_atom_name_reply_t *reply =
+		xcb_get_atom_name_reply(conn, cookie, NULL);
+	if (!reply)
+		return warn("do_get_atom_name: no reply"), NULL;
+
+	char *name = xcb_get_atom_name_name(reply);
+	int len = xcb_get_atom_name_name_length(reply);
+	char *str = strndup(name, len);
+	free(reply);
+	return str;
+}
+
 static int do_ewmh_init_atoms(void)
 {
 	xcb_intern_atom_cookie_t *cookies =
@@ -427,6 +449,70 @@ static int do_ewmh_init_atoms(void)
 	if (!status)
 		return warn("do_ewmh_init_atoms: no status");
 	return status;
+}
+
+static int do_get_type(xcb_window_t xcb, type_t *type)
+{
+	xcb_get_property_cookie_t cookie =
+		xcb_ewmh_get_wm_window_type(&ewmh, xcb);
+	if (!cookie.sequence)
+		return warn("do_get_type: bad cookie");
+
+	xcb_ewmh_get_atoms_reply_t reply;
+	if (!xcb_ewmh_get_wm_window_type_reply(&ewmh, cookie, &reply, NULL))
+		return warn("do_get_type: no reply");
+
+	type_t prev = *type;
+	for (int i = 0; i < reply.atoms_len; i++) {
+		if (reply.atoms[i] == ewmh._NET_WM_WINDOW_TYPE_DOCK)
+			*type = TYPE_TOOLBAR;
+		if (reply.atoms[i] == ewmh._NET_WM_WINDOW_TYPE_TOOLBAR)
+			*type = TYPE_TOOLBAR;
+		if (reply.atoms[i] == ewmh._NET_WM_WINDOW_TYPE_DIALOG)
+			*type = TYPE_DIALOG;
+	}
+	printf("do_get_type: %d -> %d\n", prev, *type);
+	return 1;
+}
+
+static int do_get_icccm_state(xcb_window_t xcb, state_t *state)
+{
+	xcb_get_property_cookie_t cookie;
+
+	cookie = xcb_icccm_get_wm_normal_hints(conn, xcb);
+	if (!cookie.sequence)
+		return warn("do_get_icccm_state: bad cookie1");
+
+	xcb_size_hints_t sizes;
+	if (!xcb_icccm_get_wm_normal_hints_reply(conn, cookie, &sizes, NULL))
+		return warn("do_get_icccm_state: no sizes");
+
+	state_t prev = *state;
+	printf("do_get_icccm_state: %s -> %s\n",
+			state_map[prev], state_map[*state]);
+	return 1;
+}
+
+static int do_get_ewmh_state(xcb_window_t xcb, state_t *state)
+{
+	xcb_get_property_cookie_t cookie;
+
+	cookie = xcb_ewmh_get_wm_state(&ewmh, xcb);
+	if (!cookie.sequence)
+		return warn("do_get_ewmh_state: bad cookie2");
+
+	xcb_ewmh_get_atoms_reply_t states;
+	if (!xcb_ewmh_get_wm_state_reply(&ewmh, cookie, &states, NULL))
+		return warn("do_get_ewmh_state: no reply2");
+
+	state_t prev = *state;
+	for (int i = 0; i < states.atoms_len; i++)
+		if (states.atoms[i] == ewmh._NET_WM_STATE_FULLSCREEN)
+			*state = ST_FULL;
+
+	printf("do_get_ewmh_state: %s -> %s\n",
+			state_map[prev], state_map[*state]);
+	return 1;
 }
 
 static int do_get_strut(xcb_window_t xcb, strut_t *strut)
@@ -502,9 +588,9 @@ static void do_configure_window(xcb_window_t xcb,
 		{ r, XCB_CONFIG_WINDOW_STACK_MODE   },
 	};
 
-	uint16_t mask    = 0;
-	uint32_t list[7] = {};
-	for (int i=0,j=0; i < 7; i++) {
+	uint16_t mask = 0;
+	uint32_t list[countof(table)];
+	for (int i=0,j=0; i < countof(table); i++) {
 		if (table[i][0] >= 0) {
 			list[j++] = table[i][0];
 			mask     |= table[i][1];
@@ -607,6 +693,8 @@ static void send_state(win_t *win, state_t next)
 {
 	if (!win->sys->managed)
 		return;
+	if (!win->sys->mapped)
+		return;
 	if (win->state == next)
 		return;
 	state_t prev = win->state;
@@ -704,6 +792,11 @@ static void on_create_notify(xcb_create_notify_event_t *event)
 	win->w = event->width;
 	win->h = event->height;
 
+	win->sys->state  = ST_SHOW;
+	win->sys->events = XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_change_window_attributes(conn, event->window,
+			XCB_CW_EVENT_MASK, &win->sys->events);
+
 	if (!event->override_redirect)
 		send_manage(win, 1);
 }
@@ -729,6 +822,7 @@ static void on_unmap_notify(xcb_unmap_notify_event_t *event)
 
 	win_del_strut(win);
 	send_state(win, ST_HIDE);
+	win->sys->mapped = 0;
 }
 
 static void on_map_notify(xcb_map_notify_event_t *event)
@@ -738,7 +832,8 @@ static void on_map_notify(xcb_map_notify_event_t *event)
 			event->window, win);
 	if (!win) return;
 
-	send_state(win, ST_SHOW);
+	win->sys->mapped = 1;
+	send_state(win, win->sys->state);
 }
 
 static void on_map_request(xcb_map_request_event_t *event)
@@ -748,11 +843,11 @@ static void on_map_request(xcb_map_request_event_t *event)
 			event->window, win);
 	if (!win) return;
 
-	if (do_get_strut(win->sys->xcb, &win->sys->strut))
-		win_add_strut(win);
-	send_state(win, ST_SHOW);
+	win->sys->mapped = 1;
+	send_state(win, win->sys->state);
 	xcb_map_window(conn, win->sys->xcb);
-	sys_move(win, win->x, win->y, win->w, win->h);
+	if (!win->sys->managed)
+		sys_move(win, win->x, win->y, win->w, win->h);
 }
 
 static void on_configure_request(xcb_configure_request_event_t *event)
@@ -763,6 +858,10 @@ static void on_configure_request(xcb_configure_request_event_t *event)
 			event->width, event->height,
 			event->x, event->y);
 	if (!win) return;
+	printf("on_configure_request: xcb=%-8u -> win=%p << %dx%d @ %d,%d\n",
+			event->window, win,
+			win->w, win->h,
+			win->x, win->y);
 
 	if (!win->sys->managed) {
 		win->x = event->x;
@@ -787,13 +886,74 @@ static void on_configure_request(xcb_configure_request_event_t *event)
 			(const char *)&resp);
 }
 
+static void on_property_notify(xcb_property_notify_event_t *event)
+{
+	win_t *win = win_get(event->window);
+	char *name = do_get_atom_name(event->atom);
+	printf("on_property_notify: xcb=%-8u -> win=%p - %s\n",
+			event->window, win, name);
+	if (name) free(name);
+	if (!win) return;
+
+	/* Check window type */
+	if (event->atom == ewmh._NET_WM_WINDOW_TYPE)
+		do_get_type(event->window, &win->type);
+
+	/* Check struts */
+	if (event->atom == ewmh._NET_WM_STRUT)
+		if (do_get_strut(win->sys->xcb, &win->sys->strut))
+			win_add_strut(win);
+
+	/* Check window state */
+	if (event->atom == wm_nhints)
+		if (do_get_icccm_state(event->window, &win->sys->state))
+			send_state(win, win->sys->state);
+	if (event->atom == ewmh._NET_WM_STATE)
+		if (do_get_ewmh_state(event->window, &win->sys->state))
+			send_state(win, win->sys->state);
+}
+
 static void on_client_message(xcb_client_message_event_t *event)
 {
-	printf("on_client_message: xcb=%-8u\n", event->window);
+	win_t *win = win_get(event->window);
+	char *name = do_get_atom_name(event->type);
+	printf("on_client_message: xcb=%-8u -> win=%p - %s=[%d,%d,%d,%d]\n",
+			event->window, win, name,
+			event->data.data32[0], event->data.data32[1],
+			event->data.data32[2], event->data.data32[3]);
+	if (name) free(name);
+	if (!win) return;
+
+	/* Exit request */
 	if (event->window         == control   &&
 	    event->type           == wm_protos &&
-	    event->data.data32[0] == wm_delete)
+	    event->data.data32[0] == wm_delete) {
+		printf("on_client_message: shutdown request");
 		running = 0;
+	}
+
+	/* Close request */
+	if (event->type == ewmh._NET_CLOSE_WINDOW) {
+		printf("on_client_message: close request");
+		sys_show(win, ST_CLOSE);
+	}
+
+	/* Fullscreen request  */
+	if ((event->type           == ewmh._NET_WM_STATE) &&
+	    (event->data.data32[1] == ewmh._NET_WM_STATE_FULLSCREEN ||
+	     event->data.data32[2] == ewmh._NET_WM_STATE_FULLSCREEN)) {
+		printf("on_client_message: fullscreen request");
+	     	int full = win->state == ST_FULL;
+	     	switch (event->data.data32[0]) {
+	     		case XCB_EWMH_WM_STATE_REMOVE: full  = 0; break;
+	     		case XCB_EWMH_WM_STATE_ADD:    full  = 1; break;
+			case XCB_EWMH_WM_STATE_TOGGLE: full ^= 1; break;
+		}
+		win->sys->state = full ? ST_FULL : ST_SHOW;
+		send_state(win, win->sys->state);
+		sys_show(win, win->sys->state);
+	}
+
 }
 
 /* Generic Event */
@@ -849,6 +1009,9 @@ static void on_event(xcb_generic_event_t *event)
 			break;
 		case XCB_CONFIGURE_REQUEST:
 			on_configure_request((xcb_configure_request_event_t *)event);
+			break;
+		case XCB_PROPERTY_NOTIFY:
+			on_property_notify((xcb_property_notify_event_t *)event);
 			break;
 		case XCB_CLIENT_MESSAGE:
 			on_client_message((xcb_client_message_event_t *)event);
@@ -922,6 +1085,13 @@ void sys_show(win_t *win, state_t state)
 			    win->y >= max.y && win->y <= max.y+max.h)
 				break;
 		}
+		for (list_t *cur = struts; cur; cur = cur->next) {
+			strut_t *strut = &((win_t*)cur->data)->sys->strut;
+			full.x -= strut->left;
+			full.y -= strut->top;
+			full.w += strut->left + strut->right;
+			full.h += strut->top  + strut->bottom;
+		}
 	}
 
 	/* Change window state */
@@ -971,7 +1141,7 @@ void sys_show(win_t *win, state_t state)
 	}
 
 	/* Update state */
-	win->state = state;
+	win->sys->state = win->state = state;
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)
@@ -1108,12 +1278,14 @@ void sys_init(void)
 	/* Setup X Atoms */
 	wm_protos = do_intern_atom("WM_PROTOCOLS");
 	wm_delete = do_intern_atom("WM_DELETE_WINDOW");
-	if (!wm_protos || !wm_delete)
+	wm_nhints = do_intern_atom("WM_NORMAL_HINTS");
+	if (!wm_protos || !wm_delete || !wm_nhints)
 		error("unable to setup atoms");
 
 	/* Setup EWMH connection */
 	if (!do_ewmh_init_atoms())
 		error("ewmh setup failed");
+	xcb_ewmh_set_supported(&ewmh, 0, 82, &ewmh._NET_SUPPORTED);
 
 	/* Set EWMH wm window */
 	uint32_t override = 1;
@@ -1166,10 +1338,13 @@ void sys_run(void)
 					win->w, win->h, win->x, win->y,
 					override ? " override" : "",
 					mapped   ? " mapped"   : "");
-			if (!override)
-				send_manage(win, 1);
-			if (mapped)
-				send_state(win, ST_SHOW);
+			state_t state = mapped ? ST_SHOW : ST_HIDE;
+			win->sys->mapped = mapped;
+			do_get_type(kids[i], &win->type);
+			do_get_icccm_state(kids[i], &state);
+			do_get_ewmh_state(kids[i], &state);
+			send_manage(win, !override);
+			send_state(win, state);
 		}
 		free(reply);
 		xcb_flush(conn);

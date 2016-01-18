@@ -899,7 +899,6 @@ int wm_handle_state(win_t *win, state_t prev, state_t next)
 void wm_insert(win_t *win)
 {
 	printf("wm_insert: %p\n", win);
-	print_txt();
 
 	/* Make sure it's visible */
 	if (win->state == ST_HIDE)
@@ -908,6 +907,8 @@ void wm_insert(win_t *win)
 	/* Check for toolbars */
 	if (win->type == TYPE_TOOLBAR)
 		return wm_update();
+
+	print_txt();
 
 	/* Initialize window */
 	sys_watch(win, EV_ENTER, MOD());
