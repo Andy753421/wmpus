@@ -76,9 +76,9 @@ struct win_sys {
 	struct wl_resource  *xsfc;
 	struct wl_resource  *buf;
 	sys_cdata_t         *cdata;
-	int                  x,y;     // surface x,y
-	int                  wx,wy;   // window  x,y inside sfc
-	int                  ww,wh;   // window  w,h inside sfc
+	int                  sx,sy, sw,sh;   // surface geometry
+	int                  dx,dy, dw,dh;   // damage  geometry
+	int                  wx,wy, ww,wh;   // window  geometry, inside sfc
 };
 
 /* Global data */
@@ -177,17 +177,24 @@ static mod_t get_mod(unsigned int state, int up)
 
 static win_t *find_win(int x, int y)
 {
-	for (list_t *cur = windows; cur; cur = cur->next) {
-		win_t *win = cur->data;
-		printf("find_win -- %p -- %4d,%-4d : %4dx%-4d\n",
-			win, win->x, win->y, win->w, win->h);
-	}
+	//for (list_t *cur = windows; cur; cur = cur->next) {
+	//	win_t     *win = cur->data;
+	//	win_sys_t *sys = win->sys;
+	//	printf("find_win -- %10p -- %4d,%-4d : %4dx%-4d\n"
+	//	       "            %10s -- %4d,%-4d : %4dx%-4d\n"
+	//	       "            %10s -- %4d,%-4d : %4dx%-4d\n"
+	//	       "            %10s -- %4d,%-4d : %4dx%-4d\n",
+	//		win,       win->x,  win->y,  win->w,  win->h,
+	//		"surface", sys->sx, sys->sy, sys->sw, sys->sh,
+	//		"damage",  sys->dx, sys->dy, sys->dw, sys->dh,
+	//		"window",  sys->wx, sys->wy, sys->ww, sys->wh);
+	//}
 	for (list_t *cur = windows; cur; cur = cur->next) {
 		win_t *win = cur->data;
 		int l = win->x;
-		int r = win->w + l;
+		int r = win->x + win->w;
 		int t = win->y;
-		int b = win->h + t;
+		int b = win->y + win->h;
 		if (l <= x && x <= r && t <= y && y <= b) {
 			printf("find_win -> %p\n", win);
 			return win;
@@ -552,22 +559,28 @@ static void surface_attach(struct wl_client *cli, struct wl_resource *sfc,
 		struct wl_resource *buf, int32_t x, int32_t y)
 {
 	win_t *win = wl_resource_get_user_data(sfc);
-	printf("surface_attach - %p - %d,%d\n", buf, x, y);
+	//printf("surface_attach - %p - %d,%d\n", buf, x, y);
 	win->sys->buf = buf;
-	win->sys->x   = x;
-	win->sys->y   = y;
+	win->sys->sx  = x;
+	win->sys->sy  = y;
 }
 
 static void surface_damage(struct wl_client *cli, struct wl_resource *sfc,
                    int32_t x, int32_t y, int32_t width, int32_t height)
 {
-	printf("surface_damage\n");
+	win_t *win = wl_resource_get_user_data(sfc);
+	//printf("surface_damage - %p - %d,%d %dx%d\n",
+	//		sfc, x, y, width, height);
+	win->sys->dx = x;
+	win->sys->dy = y;
+	win->sys->dw = width;
+	win->sys->dh = height;
 }
 
 static void surface_frame(struct wl_client *cli, struct wl_resource *sfc,
 		uint32_t id)
 {
-	printf("surface_frame\n");
+	//printf("surface_frame\n");
 	struct wl_resource *cb = wl_resource_create(cli, &wl_callback_interface, 1, id);
 	wl_resource_set_implementation(cb, NULL, NULL, NULL);
         wl_callback_send_done(cb, get_time());
@@ -587,7 +600,7 @@ static void surface_set_input_region(struct wl_client *cli, struct wl_resource *
 
 static void surface_commit(struct wl_client *cli, struct wl_resource *sfc)
 {
-	printf("surface_commit\n");
+	//printf("surface_commit\n");
 	gtk_widget_queue_draw(screen);
 }
 
@@ -600,7 +613,7 @@ static void surface_set_buffer_transform(struct wl_client *cli, struct wl_resour
 static void surface_set_buffer_scale(struct wl_client *cli, struct wl_resource *sfc,
 		int32_t scale)
 {
-	printf("surface_set_buffer_scale\n");
+	printf("surface_set_buffer_scale: %d\n", scale);
 }
 
 static struct wl_surface_interface surface_iface = {
@@ -764,7 +777,8 @@ static void shell_get_shell_surface(struct wl_client *cli, struct wl_resource *s
 	struct wl_resource *res = wl_resource_create(cli, &wl_shell_surface_interface, 1, id);
 	wl_resource_set_implementation(res, &ssurface_iface, win, ssurface_kill);
 
-	win->type = TYPE_NORMAL;
+	win->type  = TYPE_NORMAL;
+	win->state = ST_SHOW;
 	win->sys->ssfc = res;
 	wm_insert(win);
 }
@@ -919,7 +933,8 @@ static void xshell_get_xdg_surface(struct wl_client *cli, struct wl_resource *xs
 	struct wl_resource *res = wl_resource_create(cli, &xdg_surface_interface, 1, id);
 	wl_resource_set_implementation(res, &xsurface_iface, win, xsurface_kill);
 
-	win->type = TYPE_NORMAL;
+	win->type  = TYPE_NORMAL;
+	win->state = ST_SHOW;
 	win->sys->xsfc = res;
 	wm_insert(win);
 }
@@ -1146,23 +1161,23 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer user_data
 		g_spawn_command_line_async("vte2_90", NULL);
 
 	/* Send key to WM */
-	if (focus) {
-		event_t ev  = tolower(event->keyval);
-		mod_t   mod = get_mod(event->state, event->type == GDK_KEY_RELEASE);
-		ptr_t   ptr = get_ptr(focus);
-		if (wm_handle_event(focus, ev, mod, ptr))
-			return TRUE;
-	}
+	event_t ev  = tolower(event->keyval);
+	mod_t   mod = get_mod(event->state, event->type == GDK_KEY_RELEASE);
+	ptr_t   ptr = get_ptr(focus);
+	if (wm_handle_event(focus, ev, mod, ptr))
+		return TRUE;
+
+	/* Debug */
+	printf(g_ascii_isprint(event->keyval)
+		? "on_key - win=%p cdata=%p '%c'\n"
+		: "on_key - win=%p cdata=%p 0x%X\n",
+		focus, focus?focus->sys->cdata:0, event->keyval);
 
 	/* Skip if no focused window */
 	if (!focus || !focus->sys->cdata)
 		return FALSE;
 
 	/* Send key to wayland */
-	printf(g_ascii_isprint(event->keyval)
-		? "on_key - win=%p cdata=%p '%c'\n"
-		: "on_key - win=%p cdata=%p 0x%X\n",
-		focus, focus?focus->sys->cdata:0, event->keyval);
 	for (list_t *cur = focus->sys->cdata->kbds; cur; cur = cur->next) {
 		uint32_t serial = get_serial();
 		uint32_t stamp  = get_time();
@@ -1242,7 +1257,7 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 {
 	printf("on_draw\n");
 
-	//wm_update(); // Hacks for now
+	wm_update(); // Hacks for now
 
 	/* Draw windows bottom up */
 	list_t *bottom = list_last(windows);
@@ -1253,8 +1268,8 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cairo, gpointer user_data)
 		if (win->type == TYPE_CURSOR)
 			continue;
 		sys_bdata_t *bdata = wl_resource_get_user_data(win->sys->buf);
-		int x = win->x;
-		int y = win->y;
+		int x = win->x - win->sys->wx;
+		int y = win->y - win->sys->wy;
 		if (win->type == TYPE_POPUP && win->parent) {
 			x += win->parent->x;
 			y += win->parent->y;
@@ -1306,21 +1321,25 @@ void sys_move(win_t *win, int x, int y, int w, int h)
 	win->w = w;
 	win->h = h;
 
-	if (win->sys->ssfc)
+	if (win->sys->ssfc) {
+		printf("ssfc configure");
 		wl_shell_surface_send_configure(win->sys->ssfc,
 				WL_SHELL_SURFACE_RESIZE_NONE, w, h);
+	}
 
-	if (win->sys->xsfc)
+	if (win->sys->xsfc) {
+		printf("xsfc configure");
 		xdg_surface_send_configure(win->sys->xsfc, w, h,
 				(win == focus) ? &xstate_active : &xstate_normal,
 				get_serial());
+	}
 
 	gtk_widget_queue_draw(screen);
 }
 
 void sys_raise(win_t *win)
 {
-	printf("sys_raise: %p\n", win);
+	//printf("sys_raise: %p\n", win);
 }
 
 void sys_focus(win_t *win)
@@ -1360,7 +1379,7 @@ void sys_focus(win_t *win)
 
 void sys_show(win_t *win, state_t state)
 {
-	printf("sys_show: %p: %d\n", win, state);
+	//printf("sys_show: %p: %d\n", win, state);
 }
 
 void sys_watch(win_t *win, event_t ev, mod_t mod)

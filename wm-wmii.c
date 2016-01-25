@@ -714,12 +714,12 @@ void wm_update(void)
  *******************************/
 int wm_handle_event(win_t *win, event_t ev, mod_t mod, ptr_t ptr)
 {
-	//printf("wm_handle_event: %p - %x %c%c%c%c%c\n", win, ev,
-	//	mod.up    ? '^' : 'v',
-	//	mod.alt   ? 'a' : '-',
-	//	mod.ctrl  ? 'c' : '-',
-	//	mod.shift ? 's' : '-',
-	//	mod.win   ? 'w' : '-');
+	printf("wm_handle_event: %p - %x %c%c%c%c%c\n", win, ev,
+		mod.up    ? '^' : 'v',
+		mod.alt   ? 'a' : '-',
+		mod.ctrl  ? 'c' : '-',
+		mod.shift ? 's' : '-',
+		mod.win   ? 'w' : '-');
 
 	/* Mouse events */
 	if (win && EV_MOUSE0 <= ev && ev <= EV_MOUSE7) {

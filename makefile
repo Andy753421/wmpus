@@ -5,7 +5,7 @@
 
 # Common configuration
 VERSION   ?= 0.1-rc1
-WM        ?= wmii
+WM        ?= xwl
 SYS       ?= x11
 CFLAGS    ?= -g -Wall
 PREFIX    ?= /usr/local
